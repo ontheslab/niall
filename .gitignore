@@ -14,9 +14,6 @@ zcc_proj.lst
 NIALL
 NIALLCHK
 
-# Data files (runtime-generated)
-*.DAT
-
 # Local-only folders
 history/
 docs/
