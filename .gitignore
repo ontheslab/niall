@@ -1,0 +1,28 @@
+# Archives (use GitHub releases instead)
+*.zip
+*.lha
+*.lzh
+
+# z88dk build artifacts
+*.com
+*.bin
+*.map
+*.lis
+*.o
+*.sym
+*.err
+*.i
+zcc_opt.def
+zcc_proj.lst
+
+# CP/M executables (compiled output)
+NIALL
+NIALLCHK
+
+# Local-only folders
+history/
+docs/
+data/
+Builds/
+LOGS/
+
