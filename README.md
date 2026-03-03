@@ -27,16 +27,16 @@ This produces:
 
 Run `NIALL` on a CP/M system. Type sentences to teach NIALL, and it will reply.
 
-| Command       | Description                        |
-|---------------|------------------------------------|
-| `#FRESH`      | Clear the dictionary               |
-| `#LIST`       | Show dictionary (summary)          |
-| `#LISTD`      | Show dictionary (detailed)         |
-| `#SAVE`       | Save dictionary to disk            |
-| `#LOAD`       | Load dictionary from disk          |
-| `#MEM`        | Show memory usage                  |
-| `#HELP`       | Show command list                  |
-| (any text)    | Teach NIALL and get a reply        |
+| Command    | Description                                  |
+|------------|----------------------------------------------|
+| `#FRESH`   | Clear the dictionary                         |
+| `#LIST`    | Show dictionary (summary)                    |
+| `#LISTD`   | Show dictionary (detailed)                   |
+| `#SAVE`    | Save dictionary to disk                      |
+| `#LOAD`    | Load dictionary from disk                    |
+| `#MEM`     | Show memory usage *(Hi-Tech C version only)* |
+| `#HELP`    | Show command list                            |
+| (any text) | Teach NIALL and get a reply                  |
 
 To verify a saved dictionary file: `NIALLCHK filename`
 
@@ -69,6 +69,7 @@ Going to move away from the AMOS "compatible" internal handling and see how effi
 | `build.bat`     | Build script for both tools                  |
 | `AMOS/`         | Original 1990 AMOS BASIC source              |
 | `HiTech/`       | Hi-Tech C port (Phase 1)                     |
+| `NiallBBS/`     | BBS door version (1993)                      |
 | `sample/`       | Sample dictionary data files                 |
 
 ## Why you ask?
