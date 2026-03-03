@@ -1,0 +1,219 @@
+[1m[4mNIALL...The Non-Intelligent AMOS Language Learner[0m
+
+I have sectioned the instructions into three parts so you can skip the bits
+which do not interest you.  The sections are:
+
+1....[1mWhat NIALL does.[0m
+2....[1mHow to Use NIALL.[0m
+3....[1mCredits.[0m
+
+[1m[4mVERY IMPORTANT...Read this now![0m
+     Niall was written on an expanded A500.  Because of this the program
+contains Hi-Res graphics screens in 4 colours with quick reference
+instructions and up to a 3000 word vocabulary with a 120K buffer.  Not
+surprisingly this did not work on unexpanded A500's.  Instead of removing
+all of the above I left them alone and wrote in clauses which makes the 
+unexpanded A500 version look a lot less impressive.  It is, however, still
+the same program with the same vocabulary size and string buffer. 
+However on an unexpanded machine the Hi-Res screens in 4 colours become
+Lo-Res screens in 2 colours, and there are not quick reference instructions.
+
+[1mALSO:[0m In order to keep the buffer size and vocab size the same,
+users with Unexpanded A500's have to TURN OFF ALL EXTERNAL DRIVES or the
+program will crash!
+
+One further note to users with expanded A500's or A2000's. If you have the
+AMOS package you can load the program and change the buffer size and vocab
+size if you feel the values I have set are too restricting.
+
+  Buffer size can be set by altering the first line:
+[1m     Set Buffer 120[0m (Reserve 120K) to any size memory allows.
+
+  Vocab size can be set by altering the second line:
+     [1mMNW=3000 [0m (Set MNW to the max number of words you wish.)
+
+
+[1m[4mWHAT NIALL DOES[0m
+
+Niall attempts to learn English, or whatever language you care to teach it,
+by breaking down the sentences you type in, remembering words, connections
+between words, the number of times a particular connection has occurred, and
+start/end sentence markers.
+     The best was to explain is by example.  Suppose the first sentence you
+typed was:
+
+          [1mThe large green tree was next to the old red shed[0m
+
+     Niall would split the sentence into separate words and store any new
+words it found (Niall's vocabulary is initially blank!).
+It would then store the following information:
+
+1.....The word [1mTHE[0m can begin a sentence.
+2.....The word [1mLARGE[0m can follow the word [1mTHE[0m.
+3.....The word [1mGREEN[0m can follow the word [1mLARGE[0m...etc
+4.....The word [1mSHED[0m can end a sentence.
+
+Therefore after analysing this sentence, NIALL has learnt 10 new words
+and knows that the word [1mTHE[0m can not only start a sentence by also
+join onto both [1mLARGE[0m and [1mOLD[0m. This can be expressed as 
+follows:
+
+
+       /----------<---------------<----------------<----------\
+(Start)\-[1mTHE --- LARGE -- GREEN -- TREE -- WAS -- NEXT -- TO -[0m/
+            \
+             --- [1mOLD --- RED --- SHED [0m(End)
+
+Niall then replies to your sentence by picking a random word which can begin
+the sentence, followed by one of the words which can join onto it selected
+at random, then one which can join onto it, and so on until the end of
+sentence marker is reached.  Therefore, NIALL may reply to your first 
+sentence like so:
+
+			[1mThe old red shed.[0m
+
+The more sentences you type in the more words Niall will learn, the more
+connections it will make and the more original the replies will seem.
+  Replies must be taken with a pinch of salt since the grammar will be
+anything but perfect.  A semi intelligent version which attempts to learn
+grammar too, may appear at a later date.
+
+Niall also remember the number of times a particular connection is made in
+order to weight the replies and make them sound more realistic. For example,
+if the second sentence you type is:
+
+		[1mThe old garden gate was blue[0m
+
+Niall now knows that the word [1mTHE[0m joins onto the word [1mOLD[0m more 
+often than it joins to [1mLARGE[0m.  The table above now looks like this:
+
+       /----------<---------------<----------------<----------\
+(Start)\-[1mTHE --- LARGE -- GREEN -- TREE -- WAS -- NEXT -- TO -[0m/
+           \\[1m                           /      \[0m
+             === [1mOLD - RED - SHED[0m (End)[1m/        -BLUE[0m(End)
+                     \[1m         [0m  [1m     /[0m
+[1m [0m                     [1m- GARDEN - GATE/[0m 
+
+Niall could now reply:
+	[1mThe old garden gate was next to the old red shed.[0m
+
+The sentences can begin to get original. Well that's basically it for how
+it works.  If you have any questions contact me by writing to the address 
+at the end of this text.
+
+
+[1m[4mHOW TO USE NIALL[0m
+
+     This is simplicity itself.  You are given the prompt [1mUSER:[0m
+Here you can type up to 255 words in any number of sentences, each sentence
+must be separated from the next by a full stop.  It is not necessary to
+finish your sentence with a full stop if you only type one sentence.
+Each sentence of your input will be dealt with one after the other.  It is
+perfectly legal to type:
+
+	[1mThe cat sat on the mat. The cat was called George.[0m
+
+[1m[4mIMPORTANT:[0m Do NOT put COMMAS in your sentence because they are 
+treated just like full stops.
+
+Niall will then reply and you can enter another sentence.
+
+If you just press return without entering anything, Niall will say something
+else.  If you just press return when Niall has no vocabulary, the message
+"I cannot speak yet!" will be displayed.
+
+At the [1mUSER:[0m prompt you can also enter one fo the command words.
+All command words are prefixed by a "[1m#[0m".  The command words perform
+the following functions:
+
+
+[1m#LIST....:[0mThis function will display on the screen the current
+          vocabulary list and list of connections.  The format of
+	  the connection string is:
+Total no. of connections|Word no.(No. of times connected)..etc[1m  [0m
+The word number is displayed to the left of the word during the listing.
+
+[1m#LLIST...:[0mOutputs the same list to the printer. 
+	  MAKE SURE THAT YOU HAVE THE BOOT DISC IN THE DRIVE because
+ 	  printer drivers need to be accessed and if a requester appears
+          you will find it hard to close because the mouse pointer is
+	  shut down.
+
+[1m#LPRINT..:[0mToggles continuous output of the sentences you type and 
+          Niall's replies to a printer.  Again make sure the boot disk
+          is in the drive.
+
+[1m#CORRECT.:[0mIf you spell a word incorrectly and have already pressed
+          return you can correct by using this command.  You will be asked
+          to enter the incorrect spelling and the new word which replaces
+          it.
+         
+[1m#SPEAK...:[0mToggles the internal speech.  Only Niall's replies are
+          spoken. Make sure boot disk is in the drive as the translator
+          device is needed and the requester box is difficult to cancel
+          when the mouse cursor is shut down.
+
+[1m#FRESH...:[0mThis will wipe the current vocabulary.  You will be given
+          the "Are you sure?" option before the vocabulary is cleared.
+
+[1m#SAVE....:[0mSaves the current vocab list to disk under any name. A
+          file requester will appear.  All files are saved under
+          <NAME>.NIALL. If you omit the .NIALL, the program will add
+          it for you.
+
+[1m#LOAD....:[0mLoads a previously saved vocab list.  The file requester
+          can be used to select the file. An example file is provided
+          on the disk and is called EXAMPLE.NIALL.
+
+[1m#QUIT....:[0mA nice way to exit.  You will be given the "Are you sure?"
+          option. Note CTRL-C will also work but exit by this method is
+          immediate.
+
+
+That's it.  Have fun, and remember that the more rubbish you type in, the
+more you'll get back
+
+
+
+[1m[4mCREDITS[0m
+
+All program code and graphics by [1mMatthew Peck[0m in 1990.
+Program written using AMOS 1.1, and run using RAMOS.
+
+Niall is based on an idea called DANI (Dynamic Artificial Non-Intelligence)
+which was written for the MSX machines and published some years ago in a 
+magazine called MSX Computing.  NIALL is completely re-written and contains
+none of the original source code found in DANI, but I would like to give
+credit to the author of DANI for the inspiration.  However, I have lost the
+magazine and do not know the author's name.  If you wrote DANI or know of 
+who did, please contact me so that I can put his/her name in the credit list.
+
+Other credits to:
+[1mPatrick Fox[0m........Who helped playtest this, and whose major 
+                   contribution was helping iron out the bugs, as
+                   well as teaching Niall to swear.
+[1mAdam Wright[0m........For not stealing the idea and writing his own
+                   version, which he very nearly did, and for 
+                   playtesting too.
+[1mKevin Tye[0m..........For being a good demo contact and nice guy.
+[1mGary Keogh[0m.........For being a most encouraging and good fun sort of
+                   room mate at college.
+[1mFrancois Lionet[0m....For taking the effort to code AMOS and not do a
+                   direct STOS conversion.
+[1mSarah Gould[0m........For being a wonderful, warm and caring girlfriend
+                   whenever I need her.
+
+
+If you have any problems, suggestions, ideas, updates, extra functions,
+marvellous dictionaries, complaints, the odd red Ferrari Testarossa you
+don't want, or 5 million pounds to give away, then contact me (Mat Peck) at:
+
+                    23 WELBECK AVENUE,
+                     BEDGROVE,
+                      AYLESBURY,
+                       BUCKS,
+                        ENGLAND,
+                         HP21 9BH.
+
+		AMOS and RAMOS (c) 1990 Mandarin/Jawx
+		   NIALL is (c) Matthew Peck 1990
