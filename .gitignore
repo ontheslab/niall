@@ -1,0 +1,29 @@
+# z88dk build artifacts
+*.com
+*.bin
+*.map
+*.lis
+*.o
+*.sym
+*.err
+*.i
+zcc_opt.def
+zcc_proj.lst
+
+# CP/M executables (compiled output)
+NIALL
+NIALLCHK
+
+# Data files (runtime-generated)
+*.DAT
+
+# Local-only folders
+history/
+docs/
+data/
+Builds/
+
+# IDE and dev tool config
+.vscode/
+.claude/
+CLAUDE.md
