@@ -43,7 +43,10 @@ To verify a saved dictionary file: `NIALLCHK filename`
 ## Project History
 
 ### Original: AMOS BASIC (1990)
-NIALL began as an AMOS BASIC program on the Amiga. The original source is preserved in the `AMOS/` folder.
+NIALL began as an AMOS BASIC program on the Amiga. The original source is preserved in the `AMOS/` folder. See ".bas" file for details.
+
+### BBS Version: Compiled QickBASIC (1993)
+I `ported` NIALL into an `online` version for the BBS (I can't recall which BBS now, it was a DOS based BBS), I can't locate the code (.bas file) for it presently but the binary is availabe and running on "Amiga Retro Brisbane BBS".
 
 ### Phase 1: Hi-Tech C 3.09
 Ported to C using Hi-Tech C V3.09 — a period-correct K&R C compiler for CP/M. This version works but is memory-limited; fixed-size arrays cap the dictionary at around 48 words in practice.
