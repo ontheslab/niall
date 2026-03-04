@@ -18,6 +18,8 @@ zcc_proj.lst
 # CP/M executables (compiled output)
 NIALL
 NIALLCHK
+NIVAL
+NIFIX
 
 # Local-only folders
 history/
