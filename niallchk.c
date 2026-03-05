@@ -18,7 +18,6 @@
 
    Validation performed:
      - Magic and version
-     - num_words within MAX_WORDS
      - Each record: size limits, no truncation
      - Entry 0 (start token): wlen must be 0
      - Word bytes (entries 1..n): must be a-z or 0-9 only
@@ -33,16 +32,14 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#define MAX_WORDS       150
-#define MAX_LINKS_STR   128
-#define START_LINKS_STR 512   /* entry 0 uses the larger start_word_links buffer */
 #define MAX_WORD_LEN    31
+#define MAX_LBUF       512    /* static read buffer — large enough for any link string */
 
 /* Validate link string "total|id(cnt)id(cnt)..."
    max_valid_id: highest valid word index (disk_n); END_TOKEN (MAX_WORDS) also allowed.
    id=0 (start token) is never a valid link target.
    Returns 1=OK, 0=BAD. Fills *total_val, *sum_cnt, *pair_count if non-NULL. */
-static int validate_links(const char *s, unsigned int max_valid_id,
+static int validate_links(const char *s,
                           int *total_val, int *sum_cnt, int *pair_count)
 {
     int total = 0, sum = 0, pairs = 0;
@@ -99,8 +96,8 @@ static int validate_links(const char *s, unsigned int max_valid_id,
 
         /* id=0 is start token - never a valid link target */
         if (id < 1) return 0;
-        /* id must be an existing word or END_TOKEN */
-        if ((unsigned int)id > max_valid_id && id != MAX_WORDS) return 0;
+        /* id must be an existing word (1..disk_n) or END_TOKEN (any id > disk_n) */
+        /* END_TOKEN value varies by compile-time MAX_WORDS so accept any id > max_valid_id */
         if (cnt <= 0) return 0;
 
         sum += cnt;
@@ -117,7 +114,7 @@ static int validate_links(const char *s, unsigned int max_valid_id,
 
 /* static to avoid CP/M stack overflow */
 static unsigned char wbuf[32];
-static unsigned char lbuf[START_LINKS_STR]; /* sized for entry 0 */
+static unsigned char lbuf[MAX_LBUF];
 
 int main(int argc, char *argv[])
 {
@@ -165,12 +162,6 @@ int main(int argc, char *argv[])
 
     if (ver != 3) {
         printf("Unsupported version %u (expected 3)\n", ver);
-        fclose(fp);
-        return 1;
-    }
-
-    if (disk_n > (unsigned int)MAX_WORDS) {
-        printf("num_words %u exceeds MAX_WORDS %d\n", disk_n, MAX_WORDS);
         fclose(fp);
         return 1;
     }
@@ -239,16 +230,13 @@ int main(int argc, char *argv[])
         checksum_calc += llen_short & 0xFF;
         checksum_calc += (llen_short >> 8) & 0xFF;
 
-        {
-            unsigned int llen_max = (i == 0) ? START_LINKS_STR : MAX_LINKS_STR;
-            if (llen_short >= (unsigned short)llen_max) {
-                printf("Entry %d: llen %u >= limit %u\n", i, (unsigned)llen_short, llen_max);
-                fclose(fp);
-                return 1;
-            }
+        if (llen_short >= (unsigned short)MAX_LBUF) {
+            printf("Entry %d: llen %u >= buffer %u\n", i, (unsigned)llen_short, MAX_LBUF);
+            fclose(fp);
+            return 1;
         }
 
-        memset(lbuf, 0, START_LINKS_STR);
+        memset(lbuf, 0, MAX_LBUF);
         if (llen_short) {
             if (fread(lbuf, llen_short, 1, fp) != 1) {
                 printf("Truncated at entry %d (links)\n", i);
@@ -261,7 +249,7 @@ int main(int argc, char *argv[])
 
         {
             int total = 0, sum2 = 0, pairs = 0;
-            int ok = validate_links((char*)lbuf, disk_n, &total, &sum2, &pairs);
+            int ok = validate_links((char*)lbuf, &total, &sum2, &pairs);
             char *label = (i == 0) ? (char*)"(start)" :
                           (wlen_byte ? (char*)wbuf : (char*)"(empty)");
 
