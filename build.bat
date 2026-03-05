@@ -14,21 +14,34 @@ if /I "%1"=="debug" goto build_debug
 :build_release
 echo  Building NIALL (release)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niall.c -o NIALL
-
+if errorlevel 1 goto fail
 echo  Building NIALLCHK (release)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
-
-goto done
+if errorlevel 1 goto fail
+goto sizes
 
 :build_debug
 echo  Building NIALL (debug)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size -DDEBUG niall.c -o NIALL
-
+if errorlevel 1 goto fail
 echo  Building NIALLCHK (debug)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
+if errorlevel 1 goto fail
 
-:done
+:sizes
+echo.
+echo  Output sizes:
+for %%F in (NIALL.COM NIALLCHK.COM) do (
+    echo    %%F  %%~zF bytes
+)
+echo.
 echo ****************************************************************************
-echo  Done. Usage: build.bat [debug]
+echo  Build OK. Usage: build.bat [debug]
 echo ****************************************************************************
-pause
+exit /b 0
+
+:fail
+echo.
+echo  *** BUILD FAILED ***
+echo ****************************************************************************
+exit /b 1
