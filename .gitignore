@@ -20,6 +20,8 @@ NIALL
 NIALLCHK
 NIVAL
 NIFIX
+NIALLASC
+NIALLCONV
 
 # Local-only folders
 history/
@@ -29,7 +31,11 @@ Builds/
 dev/
 LOGS/
 
+# Release notes (temporary, used for gh release create then discarded)
+RELEASE_*.md
+
 # IDE and dev tool config
 .vscode/
 .claude/
 CLAUDE.md
+xfer_n.bat
