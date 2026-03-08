@@ -18,6 +18,12 @@ if errorlevel 1 goto fail
 echo  Building NIALLCHK (release)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
 if errorlevel 1 goto fail
+echo  Building NIALLCONV (release)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallconv.c -o NIALLCONV
+if errorlevel 1 goto fail
+echo  Building NIALLASC (release)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallasc.c -o NIALLASC
+if errorlevel 1 goto fail
 goto sizes
 
 :build_debug
@@ -27,11 +33,17 @@ if errorlevel 1 goto fail
 echo  Building NIALLCHK (debug)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
 if errorlevel 1 goto fail
+echo  Building NIALLCONV (debug)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallconv.c -o NIALLCONV
+if errorlevel 1 goto fail
+echo  Building NIALLASC (debug)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallasc.c -o NIALLASC
+if errorlevel 1 goto fail
 
 :sizes
 echo.
 echo  Output sizes:
-for %%F in (NIALL.COM NIALLCHK.COM) do (
+for %%F in (NIALL.COM NIALLCHK.COM NIALLCONV.COM NIALLASC.COM) do (
     echo    %%F  %%~zF bytes
 )
 echo.
