@@ -1,0 +1,44 @@
+                                COMMAND WORDS
+ 
+ When you are given the prompt USER: you will normally type in a sentence,
+ but you can also type in a command word.  All command words are prefixed
+ by a `#'.  BBS Ver 1.10 supports the following commands.
+ 
+ #LIST      Displays Nialls current dictionary on the screen. (Short)
+ 
+ #LLIST     Outputs the dictionary to a printer. (Local Only)
+ 
+ #LPRINT    Toggles direct output to printer.    (Local Only)
+    
+ #SAVE      Saves the current dictionary.
+ 
+ #LOAD      Loads the previously saved dictionary. (Sysop)
+ 
+ #CORRECT   Corrects a mispelt word in the current dictionary. (Sysop)
+ 
+ #FLIST     Displays Nialls current dictionary & word links. (Full)
+ 
+ #QUIT      Leaves the program. Return to BBS.
+ 
+                                   CREDITS
+ 
+          Written by Matthew Peck in AMOS Version 1.1 in August 1990
+   The original idea for NIALL was adapted from a program called DANI, which
+ was written for the MSX machines and published in a magazine,MSX Computing.
+ NIALL is a complete re-write but I would like to give credit to the  author
+ of DANI for the inspiration.  However, I no longer have the magazine and do
+ not know the author's name. If you wrote DANI then contact me so that I can
+ place your name in the credit list.
+ 
+   Many thanks go to the following people for their help, suggestions etc.
+ Adam Wright................................For waiting for me to code this.
+ Pat Fox and Julian Brown.....For playtesting my BBC basic version to death.
+ Kevin Tye...................................For being a generally nice guy.
+ Gary Keogh...............For being a great room-mate and friend at college.
+ Francios Lionet........................For AMOS, what else, and finally to 
+ Sarah Gould...........For being such a caring and understanding girlfriend.
+ 
+ My address is:
+       23 Welbeck Avenue, Bedgrove, Aylesbury, Bucks, ENGLAND, HP21 9BH.
+  Contact me with/for ideas, programs, NIALL dictionaries and NIALL updates.
+                         AMOS (c) 1990 Mandarin/Jawx

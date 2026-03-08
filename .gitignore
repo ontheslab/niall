@@ -20,6 +20,8 @@ NIALL
 NIALLCHK
 NIVAL
 NIFIX
+NIALLASC
+NIALLCONV
 
 # Local-only folders
 history/
@@ -36,3 +38,4 @@ RELEASE_*.md
 .vscode/
 .claude/
 CLAUDE.md
+xfer_n.bat
