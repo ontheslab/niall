@@ -20,6 +20,8 @@ NIALL
 NIALLCHK
 NIVAL
 NIFIX
+NIALLASC
+NIALLCONV
 
 # Local-only folders
 history/
@@ -29,3 +31,7 @@ Builds/
 dev/
 LOGS/
 
+# Release notes (temporary, used for gh release create then discarded)
+RELEASE_*.md
+
+xfer_n.bat
