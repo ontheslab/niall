@@ -38,3 +38,7 @@ xfer_n.bat
 
 # Depreciated code
 nival.c
+
+# Sample subfolders (local data only)
+sample/BBS_DAT_FILES/
+sample/MASTER_BBS_BACKUPS/
