@@ -6,6 +6,7 @@
 # z88dk build artifacts
 *.com
 *.bin
+*.nabu
 *.map
 *.lis
 *.o
@@ -22,6 +23,7 @@ NIVAL
 NIFIX
 NIALLASC
 NIALLCONV
+NIALLN
 
 # Local-only folders
 history/
@@ -43,7 +45,7 @@ nival.c
 __pycache__/
 *.pyc
 *.pyo
-python/niall.json
+python/*.json
 
 # Sample subfolders (local data only)
 sample/BBS_DAT_FILES/
