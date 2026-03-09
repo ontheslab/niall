@@ -35,3 +35,6 @@ LOGS/
 RELEASE_*.md
 
 xfer_n.bat
+
+# Depreciated code
+nival.c
