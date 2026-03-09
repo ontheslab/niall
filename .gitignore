@@ -39,3 +39,6 @@ RELEASE_*.md
 .claude/
 CLAUDE.md
 xfer_n.bat
+
+# Depreciated code
+nival.c
