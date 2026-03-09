@@ -39,6 +39,12 @@ xfer_n.bat
 # Depreciated code
 nival.c
 
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+python/niall.json
+
 # Sample subfolders (local data only)
 sample/BBS_DAT_FILES/
 sample/MASTER_BBS_BACKUPS/

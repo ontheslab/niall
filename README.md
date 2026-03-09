@@ -62,7 +62,7 @@ Both are an attempt (exercise) to model the NIALL (Markov chain) data in exactly
 ### Phase 3: Shared Link Pool (v1.10–v1.14)
 Moving away from the AMOS-compatible fixed-buffer approach. Replaced the fixed `WordEntry` struct array with a shared 14 KB text link pool and parallel offset arrays, pushing vocabulary from ~150 to 250 words while staying within the NABU TPA. Save format: v3 binary.
 
-### Phase 4: Binary Architecture (v1.15 — current)
+### Phase 4: Binary Architecture (v1.15)
 Complete replacement of text link strings with packed binary link records. A compact string pool replaces fixed 32-byte word slots. No text parsing anywhere now.
 
 - **Vocabulary:** 1000 words (up from 250)
@@ -70,6 +70,12 @@ Complete replacement of text link strings with packed binary link records. A com
 - **Save format:** v4 binary (use `NIALLCONV` to migrate v3 files)
 - **New tools:** `NIALLCONV` (v3→v4 converter), `NIALLASC` (AMOS BBS ASCII importer)
 - **Size:** 47,809 bytes — fits the NABU CP/M TPA with ~691 bytes to spare
+
+### Phase 5: New Platforms (in progress)
+Taking NIALL beyond CP/M — same algorithm, new environments.
+
+- **Python port** (`python/niall.py`) — runs on any modern OS with Python 3, no dependencies. Uses JSON for save files (human readable, editable in a text editor). Useful for building and testing large dictionaries without needing real hardware. Same word rules and commands as the CP/M version.
+- **TRS-80 native (TRSDOS/LS-DOS)** — looked into it -  but parked; z88dk CMD format compatibility with LS-DOS 6.x? (well I could not get ti) needs work before I can get a native build going.
 
 ## Files
 
@@ -83,6 +89,7 @@ Complete replacement of text link strings with packed binary link records. A com
 | `AMOS/`         | Original 1990 AMOS BASIC source                    |
 | `HiTech/`       | Hi-Tech C port (Phase 1)                           |
 | `NiallBBS/`     | BBS door version (1993) — source, help, binary zip |
+| `python/`       | Python port (Phase 5)                              |
 | `sample/`       | Sample dictionary data files                       |
 
 ## Why you ask?
