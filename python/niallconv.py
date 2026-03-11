@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-niallconv.py — NIALL Universal Dictionary Converter
+niallconv.py — NIALL Python Dictionary Converter
 Reads any NIALL save format and produces clean v4 binary and/or JSON output,
 with full validation and auto-correction.
 
 Supported input formats
-  AMOS ASCII  — original AMOS BASIC text format (Format A and Format B)
+  AMOS/BBS ASCII  — original AMOS BASIC / BBS text format (Format A and Format B)
   v3 binary   — binary with text link strings (NIALL.COM v1.13/v1.14)
   v4 binary   — compact binary records (NIALL.COM v1.15+, NIALLN.nabu)
   JSON        — Python port save format (niall.py)
@@ -21,12 +21,12 @@ Commands
   inspect  full analysis + auto-correct, writes both .dat and .json
 
 Auto-corrections reported and applied
-  Word text stripped to alphanumeric (matching clean_word() in niall.c)
-  Link totals recomputed from pair counts (stored total ignored)
+  Word text stripped to alphanumeric (same as clean_word() in niall.c)
+  Link totals recalculated from pair counts (stored total ignored)
   Duplicate target ids merged (counts summed)
   Zero-count pairs removed
   Out-of-range target ids skipped (dangling references)
-  AMOS end-token 3000 remapped to v4 end-token 1000
+  AMOS/BBS end-token 3000 remapped to v4 end-token 1000
   Start-token singleton pairs removed (transitions seen only once)
   Pairs over MAX_PAIRS/START_PAIRS: lowest-count transitions dropped
   v4 checksum verified; mismatch reported
@@ -50,7 +50,7 @@ MAGIC          = b"NIAL"
 BIN_VERSION    = 4
 MAX_WORDS      = 1000
 END_TOKEN      = MAX_WORDS        # 1000 — end-of-sentence sentinel in v4
-AMOS_END_TOKEN = 3000             # end-of-sentence sentinel in AMOS ASCII files
+AMOS_END_TOKEN = 3000             # end-of-sentence sentinel in AMOS/BBS ASCII files
 START_PAIRS    = 100              # max transitions for start token
 MAX_PAIRS      = 25               # max transitions for regular words
 MAX_WORD_LEN   = 31               # max characters in a dictionary word
@@ -116,7 +116,7 @@ def detect_format(raw):
     stripped = head.lstrip()
     if stripped.startswith('{'):
         return 'json'
-    # AMOS ASCII: first line is a number (possibly space-padded)
+    # AMOS/BBS ASCII: first line is a number (possibly space-padded)
     m = re.match(r'\s*(\d+)', stripped)
     if m:
         return 'amos'
@@ -125,7 +125,7 @@ def detect_format(raw):
 
 
 # --------------------------------------------------------------------------
-# Link-string parser — used for AMOS ASCII and v3 binary
+# Link-string reader / parser — for AMOS/BBS ASCII and v3 binary
 # --------------------------------------------------------------------------
 
 def _parse_link_string(s, disk_n, entry_label, report):
@@ -181,7 +181,7 @@ def _parse_link_string(s, disk_n, entry_label, report):
 
 
 # --------------------------------------------------------------------------
-# Pair filtering — dedup, remove singletons, cap at limit
+# Pair filtering — de-dup, remove singletons, cap at limit
 # --------------------------------------------------------------------------
 
 def _filter_pairs(pairs, cap, rm_singletons, entry_label, report):
@@ -243,7 +243,7 @@ def _pairs_to_successors(pairs, index_to_word, entry_label, report):
 
 
 # --------------------------------------------------------------------------
-# Clean word text (match niall.c clean_word behaviour)
+# Clean word text (match niall.c clean_word)
 # --------------------------------------------------------------------------
 
 def _clean_word_text(text, entry_label, report):
@@ -483,7 +483,7 @@ def _parse_v3(raw):
 
 def _parse_amos(raw):
     """
-    Parse an AMOS ASCII text save file (Format A or Format B).
+    Parse an AMOS/BBS ASCII text save file (Format A or Format B).
 
     Format A (LF/CRLF, word text + link on separate lines):
       num_words
@@ -526,7 +526,7 @@ def _parse_amos(raw):
     # Read num_words from first line
     first = next_nonblank()
     if first is None:
-        _die("Empty AMOS ASCII file.")
+        _die("Empty AMOS/BBS ASCII file.")
     m = re.search(r'\d+', first)
     if not m:
         _die(f"Cannot read word count from first line: {first!r}")
@@ -537,9 +537,9 @@ def _parse_amos(raw):
     # Format detection: read next non-blank line
     peek = next_nonblank()
     if peek is None:
-        _die("AMOS ASCII file has only a word count line.")
+        _die("AMOS/BBS ASCII file has only a word count line.")
     format_b = ('|' in peek)
-    report.note(f"AMOS ASCII Format {'B (old CRLF)' if format_b else 'A (LF)'} detected, {num_words} words")
+    report.note(f"AMOS/BBS ASCII Format {'B (old CRLF)' if format_b else 'A (LF)'} detected, {num_words} words")
 
     index_to_word = {0: START, END_TOKEN: END}
     raw_links     = {}
@@ -611,7 +611,7 @@ def load_any(path):
         fmt_name = "v3 binary"
         dictionary, report, num_words = _parse_v3(raw)
     elif fmt == 'amos':
-        fmt_name = "AMOS ASCII"
+        fmt_name = "AMOS/BBS ASCII"
         dictionary, report, num_words = _parse_amos(raw)
     elif fmt == 'json':
         fmt_name = "JSON"
@@ -777,10 +777,10 @@ def _die(msg):
 
 def _die_bad_magic(raw):
     if len(raw) > 0 and (chr(raw[0]).isdigit() or chr(raw[0]) == ' '):
-        _die("This looks like an AMOS ASCII text save file.\n"
+        _die("This looks like an AMOS/BBS ASCII text save file.\n"
              "       Use: python niallconv.py to-json <file>")
     _die("Unrecognised file format (bad magic bytes).\n"
-         "       Supported: AMOS ASCII text, v3 binary, v4 binary, JSON.")
+         "       Supported: AMOS/BBS ASCII text, v3 binary, v4 binary, JSON.")
 
 
 def _usage():
