@@ -45,4 +45,4 @@ Pairs    : 10 total, 1..2 per word
 ## Notes
 
 - BBS dictionary files (converted from AMOS ASCII format via `NIALLASC`) will be added here.
-- For v3 files (NIALL v1.14 or earlier), use `NIALLCONV old.dat new.dat` to upgrade before loading.
+- For v3 files (NIALL v1.14 or earlier), use `NIALLCON old.dat new.dat` to upgrade before loading.

@@ -1,6 +1,7 @@
-/* niall_conv.c - NIALLCONV: Convert NIALL v3 save files to v4 format
-   Compile: zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niall_conv.c -o NIALLCONV
-   Usage: NIALLCONV infile outfile
+/* niallcon.c - NIALLCON: Convert NIALL v3 save files to v4 format
+   (Renamed from niallconv.c / NIALLCONV.COM for CP/M 8.3 filename compatibility)
+   Compile: zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallcon.c -o NIALLCON
+   Usage: NIALLCON infile outfile
 
    Reads a v3 binary NIALL save file (text link strings as produced by
    v1.13 / v1.14), converts to the v4 binary link record format used by
@@ -119,7 +120,7 @@ int main(int argc, char *argv[])
     int j;
 
     if (argc != 3) {
-        printf("Usage: NIALLCONV infile outfile\n");
+        printf("Usage: NIALLCON infile outfile\n");
         printf("Converts NIALL v3 save files to v4 format.\n");
         return 1;
     }

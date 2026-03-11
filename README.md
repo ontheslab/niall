@@ -4,26 +4,31 @@
 
 **NIALL** is a faithful 8-bit recreation of a **1990 AMOS BASIC (Non Intelligent (AMOS) Language Learner)** Markov chain chatbot, ported to C for CP/M-80. You teach it sentences, it learns word transitions with weighted probabilities, and generates replies by walking the Markov chain.
 
-## Target Platform
+## Target Platforms
 
-- **OS:** CP/M 2.2 (TRS-80 Model 4P, NABU CP/M)
+- **CP/M 2.2** — NABU, TRS-80 Model 4P, Kaypro II/10, Coleco ADAM, and compatible Z80 systems
+- **NABU Native** — homebrew binary using NABU-LIB (VDP display, IA file storage)
 - **CPU:** Z80, 64KB address space
 - **Compiler:** z88dk with SDCC
 
 ## Building
 
 ```
-build.bat          # release build
-build.bat debug    # debug build (enables #DEBUG command and save/load tracing)
+build.bat          # CP/M release (NIALL.COM + tools)
+build.bat nabu     # NABU native 40-col TMS9918 (NIALLN.NABU)
+build.bat nabu80   # NABU native 80-col F18A    (NIALLN80.NABU)
+build.bat debug    # CP/M debug build (enables #DEBUG command)
 ```
 
 Requires [z88dk](https://github.com/z88dk/z88dk) installed at `C:\z88dk\`.
 
-This produces:
+CP/M build produces:
 - `NIALL.COM` — the chatbot
 - `NIALLCHK.COM` — save file verifier
-- `NIALLCONV.COM` — v3 → v4 save file converter
+- `NIALLCON.COM` — v3 → v4 save file converter
 - `NIALLASC.COM` — AMOS BBS ASCII importer
+
+NABU builds produce `NIALLN.NABU` (40-col) or `NIALLN80.NABU` (80-col F18A).
 
 ## Usage
 
@@ -39,7 +44,7 @@ Run `NIALL` on a CP/M system. Type sentences to teach NIALL, and it will reply.
 | (any text) | Teach NIALL and get a reply                  |
 
 To verify a saved dictionary file: `NIALLCHK filename`
-To convert a v3 save file to v4: `NIALLCONV old.dat new.dat`
+To convert a v3 save file to v4: `NIALLCON old.dat new.dat`
 To import an AMOS BBS ASCII save file: `NIALLASC input.dat output.dat`
 
 ## Project History
@@ -62,14 +67,23 @@ Both are an attempt (exercise) to model the NIALL (Markov chain) data in exactly
 ### Phase 3: Shared Link Pool (v1.10–v1.14)
 Moving away from the AMOS-compatible fixed-buffer approach. Replaced the fixed `WordEntry` struct array with a shared 14 KB text link pool and parallel offset arrays, pushing vocabulary from ~150 to 250 words while staying within the NABU TPA. Save format: v3 binary.
 
-### Phase 4: Binary Architecture (v1.15 — current)
+### Phase 4: Binary Architecture (v1.15)
 Complete replacement of text link strings with packed binary link records. A compact string pool replaces fixed 32-byte word slots. No text parsing anywhere now.
 
 - **Vocabulary:** 1000 words (up from 250)
 - **Link format:** `3 + n×4` byte binary records — no ASCII encoding or parsing
-- **Save format:** v4 binary (use `NIALLCONV` to migrate v3 files)
-- **New tools:** `NIALLCONV` (v3→v4 converter), `NIALLASC` (AMOS BBS ASCII importer)
+- **Save format:** v4 binary (use `NIALLCON` to migrate v3 files)
+- **New tools:** `NIALLCON` (v3→v4 converter), `NIALLASC` (AMOS BBS ASCII importer)
 - **Size:** 47,809 bytes — fits the NABU CP/M TPA with ~691 bytes to spare
+
+### Phase 5: New Platforms (v1.20)
+Taking NIALL beyond CP/M — same algorithm, new environments.
+
+- **NABU Native** (`NIALLN.NABU`) — true homebrew binary using NABU-LIB. VDP text display (40-col TMS9918 default, 80-col F18A option), RetroNET IA file storage, single source compiles for both CP/M and NABU native via `NABU_XXXX()` platform macros.
+- **Python toolkit** (`python/`) — three companion tools for working with dictionaries on a modern PC: `niall.py` (chatbot, JSON save format), `niallconv.py` (universal format converter — AMOS ASCII, v3, v4, JSON), `nialled.py` (interactive dictionary editor with orphan/dead-end detection and repair).
+
+### Phase 6: Coming Soon
+Next steps for NIALL — watch this space.
 
 ## Files
 
@@ -77,12 +91,13 @@ Complete replacement of text link strings with packed binary link records. A com
 |-----------------|----------------------------------------------------|
 | `niall.c`       | Main source — learning, reply generation           |
 | `niallchk.c`    | Save file verifier (v3 and v4)                     |
-| `niallconv.c`   | v3 → v4 save file converter                        |
+| `niallcon.c`    | v3 → v4 save file converter (renamed from niallconv.c for CP/M 8.3) |
 | `niallasc.c`    | AMOS BBS ASCII → v4 importer                       |
 | `build.bat`     | Build script for all tools                         |
 | `AMOS/`         | Original 1990 AMOS BASIC source                    |
 | `HiTech/`       | Hi-Tech C port (Phase 1)                           |
 | `NiallBBS/`     | BBS door version (1993) — source, help, binary zip |
+| `python/`       | Python port (Phase 5)                              |
 | `sample/`       | Sample dictionary data files                       |
 
 ## Why you ask?
