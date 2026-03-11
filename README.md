@@ -22,7 +22,7 @@ Requires [z88dk](https://github.com/z88dk/z88dk) installed at `C:\z88dk\`.
 This produces:
 - `NIALL.COM` — the chatbot
 - `NIALLCHK.COM` — save file verifier
-- `NIALLCONV.COM` — v3 → v4 save file converter
+- `NIALLCON.COM` — v3 → v4 save file converter
 - `NIALLASC.COM` — AMOS BBS ASCII importer
 
 ## Usage
@@ -39,7 +39,7 @@ Run `NIALL` on a CP/M system. Type sentences to teach NIALL, and it will reply.
 | (any text) | Teach NIALL and get a reply                  |
 
 To verify a saved dictionary file: `NIALLCHK filename`
-To convert a v3 save file to v4: `NIALLCONV old.dat new.dat`
+To convert a v3 save file to v4: `NIALLCON old.dat new.dat`
 To import an AMOS BBS ASCII save file: `NIALLASC input.dat output.dat`
 
 ## Project History
@@ -67,8 +67,8 @@ Complete replacement of text link strings with packed binary link records. A com
 
 - **Vocabulary:** 1000 words (up from 250)
 - **Link format:** `3 + n×4` byte binary records — no ASCII encoding or parsing
-- **Save format:** v4 binary (use `NIALLCONV` to migrate v3 files)
-- **New tools:** `NIALLCONV` (v3→v4 converter), `NIALLASC` (AMOS BBS ASCII importer)
+- **Save format:** v4 binary (use `NIALLCON` to migrate v3 files)
+- **New tools:** `NIALLCON` (v3→v4 converter), `NIALLASC` (AMOS BBS ASCII importer)
 - **Size:** 47,809 bytes — fits the NABU CP/M TPA with ~691 bytes to spare
 
 ### Phase 5: New Platforms (in progress)
@@ -83,7 +83,7 @@ Taking NIALL beyond CP/M — same algorithm, new environments.
 |-----------------|----------------------------------------------------|
 | `niall.c`       | Main source — learning, reply generation           |
 | `niallchk.c`    | Save file verifier (v3 and v4)                     |
-| `niallconv.c`   | v3 → v4 save file converter                        |
+| `niallcon.c`    | v3 → v4 save file converter (renamed from niallconv.c for CP/M 8.3) |
 | `niallasc.c`    | AMOS BBS ASCII → v4 importer                       |
 | `build.bat`     | Build script for all tools                         |
 | `AMOS/`         | Original 1990 AMOS BASIC source                    |
