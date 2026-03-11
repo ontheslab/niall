@@ -2,7 +2,7 @@
 """
 niall.py - NIALL - Non Intelligent (AMOS) Language Learner
 Markov chain chatbot — Python port of the 1990 AMOS BASIC original by Matthew Peck.
-CP/M C port by Intangybles. Python port by Intangybles.
+Python port by Intangybles.
 
 Usage:
     python niall.py
@@ -32,9 +32,9 @@ import sys
 
 VERSION      = "1.0"
 DEFAULT_FILE = "niall.json"
-MAX_REPLY    = 100      # max words in a generated reply — stops it going around in circles forever
+MAX_REPLY    = 100      # max words in a generated reply — stops infinit loops
 
-# Internal sentence boundary markers. Double underscores mean they won't
+# Sentence boundary markers. Double underscores so they won't
 # collide with any real word after clean_word() strips to alphanumerics.
 START = "__START__"
 END   = "__END__"
@@ -73,7 +73,7 @@ def learn_sentence(sentence):
       is    -> niall (+1)
       niall -> END (+1)
     If the same transition has been seen before, the count goes up.
-    Words that reduce to nothing after cleaning are skipped.
+    Words that reduce to nothing after cleaning (not real words) are skipped.
     """
     words = [clean_word(w) for w in sentence.split()]
     words = [w for w in words if w]  # ditch anything that cleaned away to nothing
@@ -113,11 +113,10 @@ def weighted_choice(successors):
 def generate_reply():
     """
     Walk the Markov chain from START, picking each next word by weighted
-    chance until END or MAX_REPLY words. Capitalises and adds a full stop
-    to match the original AMOS presentation.
+    chance until END or MAX_REPLY words. Capitalises and adds a full stop.
     """
     if START not in dictionary or not dictionary[START]:
-        return "I can't speak with an empty dictionary."
+        return "I can't speak yet - empty dictionary."
 
     words = []
     current = weighted_choice(dictionary[START])
@@ -175,7 +174,7 @@ def do_list():
 
 
 def do_save(filename):
-    """Write the dictionary to a JSON file. Version key included for format detection."""
+    """Write the dictionary to a JSON file. Version key included for future format detection."""
     data = {"version": 1, "dictionary": dictionary}
     try:
         with open(filename, "w", encoding="utf-8") as f:
@@ -249,7 +248,7 @@ def process_input(line):
             print(f"Unknown command: {line}")
         return
 
-    # Split on full stops and commas (commas = sentence separators, matching AMOS/C)
+    # Split sentences on full stops and commas (commas = sentence separators, matching AMOS/C)
     sentences = re.split(r'[.,]+', line)
     learned = False
     for sentence in sentences:
