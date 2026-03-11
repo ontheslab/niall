@@ -6,7 +6,7 @@
 
 ## Target Platforms
 
-- **CP/M 2.2** — NABU, Kaypro II/10, Coleco ADAM, and compatible Z80 systems
+- **CP/M 2.2** — NABU, TRS-80 Model 4P, Kaypro II/10, Coleco ADAM, and compatible Z80 systems
 - **NABU Native** — homebrew binary using NABU-LIB (VDP display, IA file storage)
 - **CPU:** Z80, 64KB address space
 - **Compiler:** z88dk with SDCC
