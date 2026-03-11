@@ -47,7 +47,7 @@
      New pair additions copy old record + append at HWM (old abandoned).
      MAX_WORDS increased from 250 to 1000.
      Save/load file format: v4 binary (not compatible with v3).
-     Use NIALLCONV to migrate v3 save files to v4.
+     Use NIALLCON to migrate v3 save files to v4.
    - Removed: word_text[][], link_off[], link_len[], link_pool[], pool_hwm,
      link_parse_buf[], link_rebuild_buf[], pool_alloc(), pool_commit(),
      validate_links(), io_lrec[].
@@ -63,7 +63,7 @@
    - Fixed: new-word pool pre-check now reserves BLNK_SZ(0)+BLNK_SZ(1)=10 bytes
      (was only BLNK_SZ(0)=3); prevents words being added with no links when the
      pool is nearly full.
-   - New companion tools: NIALLCONV (v3->v4), NIALLASC (AMOS BBS ASCII->v4).
+   - New companion tools: NIALLCON (v3->v4), NIALLASC (AMOS BBS ASCII->v4).
    - NIALL.COM: 47,809 bytes; ~691 bytes headroom on NABU CP/M.
 
    Version 1.14
@@ -871,7 +871,7 @@ void generate_reply(void)
    Footer (2 bytes):
      unsigned short checksum (LE) — running byte sum of all payload bytes
 
-   Note: v1.15 does NOT load v3 files. Use NIALLCONV to convert v3 -> v4.
+   Note: v1.15 does NOT load v3 files. Use NIALLCON to convert v3 -> v4.
 */
 
 /* ------------------- Debug Helpers -------------------- */
