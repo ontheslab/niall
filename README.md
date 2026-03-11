@@ -4,26 +4,31 @@
 
 **NIALL** is a faithful 8-bit recreation of a **1990 AMOS BASIC (Non Intelligent (AMOS) Language Learner)** Markov chain chatbot, ported to C for CP/M-80. You teach it sentences, it learns word transitions with weighted probabilities, and generates replies by walking the Markov chain.
 
-## Target Platform
+## Target Platforms
 
-- **OS:** CP/M 2.2 (TRS-80 Model 4P, NABU CP/M)
+- **CP/M 2.2** — NABU, Kaypro II/10, Coleco ADAM, and compatible Z80 systems
+- **NABU Native** — homebrew binary using NABU-LIB (VDP display, IA file storage)
 - **CPU:** Z80, 64KB address space
 - **Compiler:** z88dk with SDCC
 
 ## Building
 
 ```
-build.bat          # release build
-build.bat debug    # debug build (enables #DEBUG command and save/load tracing)
+build.bat          # CP/M release (NIALL.COM + tools)
+build.bat nabu     # NABU native 40-col TMS9918 (NIALLN.NABU)
+build.bat nabu80   # NABU native 80-col F18A    (NIALLN80.NABU)
+build.bat debug    # CP/M debug build (enables #DEBUG command)
 ```
 
 Requires [z88dk](https://github.com/z88dk/z88dk) installed at `C:\z88dk\`.
 
-This produces:
+CP/M build produces:
 - `NIALL.COM` — the chatbot
 - `NIALLCHK.COM` — save file verifier
 - `NIALLCON.COM` — v3 → v4 save file converter
 - `NIALLASC.COM` — AMOS BBS ASCII importer
+
+NABU builds produce `NIALLN.NABU` (40-col) or `NIALLN80.NABU` (80-col F18A).
 
 ## Usage
 
@@ -71,11 +76,14 @@ Complete replacement of text link strings with packed binary link records. A com
 - **New tools:** `NIALLCON` (v3→v4 converter), `NIALLASC` (AMOS BBS ASCII importer)
 - **Size:** 47,809 bytes — fits the NABU CP/M TPA with ~691 bytes to spare
 
-### Phase 5: New Platforms (in progress)
+### Phase 5: New Platforms (v1.20)
 Taking NIALL beyond CP/M — same algorithm, new environments.
 
-- **Python port** (`python/niall.py`) — runs on any modern OS with Python 3, no dependencies. Uses JSON for save files (human readable, editable in a text editor). Useful for building and testing large dictionaries without needing real hardware. Same word rules and commands as the CP/M version.
-- **TRS-80 native (TRSDOS/LS-DOS)** — looked into it -  but parked; z88dk CMD format compatibility with LS-DOS 6.x? (well I could not get ti) needs work before I can get a native build going.
+- **NABU Native** (`NIALLN.NABU`) — true homebrew binary using NABU-LIB. VDP text display (40-col TMS9918 default, 80-col F18A option), RetroNET IA file storage, single source compiles for both CP/M and NABU native via `NABU_XXXX()` platform macros.
+- **Python toolkit** (`python/`) — three companion tools for working with dictionaries on a modern PC: `niall.py` (chatbot, JSON save format), `niallconv.py` (universal format converter — AMOS ASCII, v3, v4, JSON), `nialled.py` (interactive dictionary editor with orphan/dead-end detection and repair).
+
+### Phase 6: Coming Soon
+Next steps for NIALL — watch this space.
 
 ## Files
 
