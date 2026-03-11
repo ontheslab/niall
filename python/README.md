@@ -106,7 +106,12 @@ nialled*[niall.json | 47w]>
 | `quit` | Exit (warns if there are unsaved changes) |
 
 Words can always be referred to by name or by their `#` index shown in `list`.
-Use `end` as a target name for the end-of-sentence token.
+Use `<start>` or `#0` for the start token, `<end>` for the end-of-sentence token.
+
+```
+set <start> hello 5   — add/strengthen "hello" as a sentence opener
+set hello <end> 3     — make "hello" able to end a sentence
+```
 
 ### Typical workflow
 
@@ -129,6 +134,37 @@ nialled> prune 2
 nialled> save niall.json
 nialled> export NIALL.DAT
 ```
+
+### Rescuing orphans
+
+`orphans` finds words that nothing transitions to — they exist in the dictionary but
+NIALL can never reach them during reply generation. Here is a real example of wiring
+one back in by building a bridge through a new word:
+
+```
+# "alien" shows up as an orphan — nothing leads to it
+# but show reveals it has a useful transition: alien -> breed
+nialled> show alien
+
+# "amiga" is already in the dictionary — a natural lead-in
+# Add a new linking word "game" and wire everything together
+
+nialled> add game
+nialled> set <start> game 3      # "game" can start a sentence
+nialled> set amiga game 5        # "amiga" leads to "game"
+nialled> set game alien 4        # "game" leads to "alien"
+
+# Verify the chain is now reachable
+nialled> chain amiga
+  amiga -> game -> alien -> breed -> ...
+
+# Save
+nialled> save
+nialled> export NIALL.DAT
+```
+
+The `chain` command is useful after any edit to verify NIALL can actually walk the
+path you intended before you export.
 
 ---
 

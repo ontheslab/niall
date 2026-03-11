@@ -29,6 +29,12 @@ Commands
   export [file]             Export to v4 binary (NIALL.DAT)
   help                      Show this list
   quit                      Exit (warns if unsaved changes)
+
+Special tokens
+  <start>  or  #0           The sentence start token
+  <end>                     The end-of-sentence token
+  e.g.  set <start> hello 5  — add/strengthen "hello" as a sentence opener
+        set hello <end> 3   — make "hello" able to end a sentence
 """
 
 import json
@@ -98,6 +104,8 @@ def _resolve(token):
             return words[idx - 1]
         print(f"  Index {idx} out of range (0..{len(words)}).")
         return None
+    if token.lower().strip("<>()_ ") in ("start", "__start__"):
+        return START
     if token in dictionary:
         return token
     lower = token.lower()
@@ -255,6 +263,20 @@ def cmd_dead(args):
     print(f"  {len(dead)} dead end(s):\n")
     _page([f"  #{_display_index(w):<5} {w}" for w in dead])
     print()
+    # Count total incoming refs so user knows what else will be affected
+    total_refs = sum(
+        1 for w in dead for src in dictionary if w in dictionary.get(src, {})
+    )
+    ref_note = f", removing {total_refs} incoming reference(s)" if total_refs else ""
+    try:
+        ans = input(f"  Remove all {len(dead)} dead end(s){ref_note}? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if ans == 'y':
+        for w in dead:
+            _remove_word(w)
+        print(f"  Removed {len(dead)} dead end(s).")
 
 
 def cmd_orphans(args):
@@ -268,6 +290,15 @@ def cmd_orphans(args):
     print(f"  {len(orphans)} orphan(s) — nothing transitions to these words:\n")
     _page([f"  #{_display_index(w):<5} {w}" for w in orphans])
     print()
+    try:
+        ans = input(f"  Remove all {len(orphans)} orphan(s)? (safe — nothing points to them) [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if ans == 'y':
+        for w in orphans:
+            _remove_word(w)
+        print(f"  Removed {len(orphans)} orphan(s).")
 
 
 def cmd_stats(args):
@@ -309,7 +340,7 @@ def cmd_set(args):
         return
 
     # Allow 'end' / '(end)' / '__end__' as the target
-    if args[1].lower().strip("()_") == "end":
+    if args[1].lower().strip("<>()_ ") in ("end", "__end__"):
         dst = END
     else:
         # Try to resolve; if not found, treat as a new word name to create
@@ -364,7 +395,7 @@ def cmd_del(args):
     src = _resolve(args[0])
     if src is None:
         return
-    if args[1].lower().strip("()_") == "end":
+    if args[1].lower().strip("<>()_ ") in ("end", "__end__"):
         dst = END
     else:
         dst = _resolve(args[1])
@@ -397,6 +428,17 @@ def cmd_add(args):
     print(f"  Added: '{word}'  (no transitions yet — use 'set' to add some)")
 
 
+def _remove_word(word):
+    """Remove a word and all references to it. Returns number of refs removed."""
+    refs = [src for src in dictionary if word in dictionary.get(src, {})]
+    for src in refs:
+        del dictionary[src][word]
+    if word in dictionary:
+        del dictionary[word]
+    _mark_dirty()
+    return len(refs)
+
+
 def cmd_remove(args):
     if not args:
         print("  Usage: remove <word|#>")
@@ -407,16 +449,8 @@ def cmd_remove(args):
     if word == START:
         print("  Cannot remove the start token.")
         return
-
-    refs = [(src, dictionary[src][word])
-            for src in dictionary if word in dictionary.get(src, {})]
-    for src, _ in refs:
-        del dictionary[src][word]
-    if word in dictionary:
-        del dictionary[word]
-
-    _mark_dirty()
-    print(f"  Removed '{word}' and {len(refs)} reference(s) to it.")
+    refs = _remove_word(word)
+    print(f"  Removed '{word}' and {refs} reference(s) to it.")
 
 
 def cmd_rename(args):
