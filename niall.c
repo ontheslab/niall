@@ -765,7 +765,11 @@ int main(void)
 void user_input(void)
 {
     comm = 0;
+#if SCREEN_COLS <= 32
+    NABU_PRINTF("\nU: ");
+#else
     NABU_PRINTF("\nUSER: ");
+#endif
     NABU_FLUSH();
 
     NABU_GETLINE(input_buf, MAX_INPUT);
@@ -963,19 +967,34 @@ void learn_sentence(void)
    Continuation lines are indented 7 spaces to align with the reply text. */
 static void print_reply(const char *s)
 {
+#if SCREEN_COLS <= 32
+    int col = 3;            /* width of "N: " prefix (32-col build) */
+#else
     int col = 7;            /* width of "NIALL: " prefix */
+#endif
     const char *p = s;
     const char *e;
     int wlen;
+#if SCREEN_COLS <= 32
+    NABU_PRINTF("N: ");
+#else
     NABU_PRINTF("NIALL: ");
+#endif
     while (*p) {
         e = p;
         while (*e && *e != ' ') e++;
         wlen = (int)(e - p);
+#if SCREEN_COLS <= 32
+        if (col > 3 && col + wlen > SCREEN_COLS) {
+            NABU_PRINTF("\n   ");
+            col = 3;
+        }
+#else
         if (col > 7 && col + wlen > SCREEN_COLS) {
             NABU_PRINTF("\n       ");
             col = 7;
         }
+#endif
         while (p < e) { NABU_PUTCHAR(*p); p++; col++; }
         if (*p == ' ') {
             if (col < SCREEN_COLS) { NABU_PUTCHAR(' '); col++; }
