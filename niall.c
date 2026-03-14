@@ -276,6 +276,14 @@ static void nabu_puts(const char *s)
     }
 }
 
+/* nabu_putc: output a single character to VDP. */
+static void nabu_putc(char c)
+{
+    if (c == '\n') { vdp_newLine(); vdp_setCursor2(0, vdp_cursor.y); }
+    else           { vdp_write((uint8_t)c); }
+}
+#define NABU_PUTCHAR(c)  nabu_putc(c)
+
 /* nabu_printf: vsprintf into nabu_pb then output via nabu_puts. */
 static void nabu_printf(const char *fmt, ...)
 {
@@ -323,6 +331,7 @@ static void nabu_getline(char *buf, int maxlen)
 #define NABU_FLUSH()        fflush(stdout)
 #define NABU_GETCHAR()      getchar()
 #define NABU_GETLINE(b,n)   fgets(b, n, stdin)
+#define NABU_PUTCHAR(c)     putchar(c)
 #define NABU_DEFAULT_FILE   "NIALL.DAT"
 #define NIALL_PLATFORM      "CP/M C port"
 
@@ -343,6 +352,17 @@ static void nabu_getline(char *buf, int maxlen)
 #define NIALL_TITLE_SEP     "\n"
 #else
 #define NIALL_TITLE_SEP     " "
+#endif
+
+/* Screen width for word-wrap and narrow-display builds.
+   Override at compile time with -DCPM_COLS=32 or -DCPM_COLS=40.
+   NABU widths follow VDP mode automatically. */
+#ifdef CPM_COLS
+#  define SCREEN_COLS   CPM_COLS
+#elif defined(__NABU__) && !defined(VDP_80COL)
+#  define SCREEN_COLS   40
+#else
+#  define SCREEN_COLS   80
 #endif
 
 /* ------------------- Configuration -------------------- */
@@ -707,7 +727,13 @@ static void link_update(unsigned int old, unsigned int f)
 int main(void)
 {
     NABU_INIT();
+#if !defined(__NABU__) && defined(CPM_COLS) && (CPM_COLS) <= 32
+    NABU_PRINTF("Welcome to NIALL v" NIALL_VERSION "\nCP/M by Intangybles\nNon Intelligent (AMOS) Learner\nby Matthew Peck (1990)\n\nTry - #help\n\n");
+#elif !defined(__NABU__) && defined(CPM_COLS) && (CPM_COLS) <= 40
+    NABU_PRINTF("Welcome to NIALL v" NIALL_VERSION "\n(" NIALL_PLATFORM " by Intangybles)\nNon Intelligent (AMOS) Language Learner\nby Matthew Peck (1990)\n\nTry - #help\n\n");
+#else
     NABU_PRINTF("Welcome to NIALL" NIALL_TITLE_SEP "(" NIALL_PLATFORM " by Intangybles) v" NIALL_VERSION "\nNon Intelligent (AMOS) Language Learner\nby Matthew Peck (1990)\n\nTry - #help\n\n");
+#endif
 
 #ifdef __NABU__
     ia_fh = rn_fileOpen(IA_FILE_LEN, (uint8_t *)IA_FILE,
@@ -933,6 +959,32 @@ void learn_sentence(void)
     }
 }
 
+/* print_reply: output "NIALL: " + reply with word-wrap at SCREEN_COLS.
+   Continuation lines are indented 7 spaces to align with the reply text. */
+static void print_reply(const char *s)
+{
+    int col = 7;            /* width of "NIALL: " prefix */
+    const char *p = s;
+    const char *e;
+    int wlen;
+    NABU_PRINTF("NIALL: ");
+    while (*p) {
+        e = p;
+        while (*e && *e != ' ') e++;
+        wlen = (int)(e - p);
+        if (col > 7 && col + wlen > SCREEN_COLS) {
+            NABU_PRINTF("\n       ");
+            col = 7;
+        }
+        while (p < e) { NABU_PUTCHAR(*p); p++; col++; }
+        if (*p == ' ') {
+            if (col < SCREEN_COLS) { NABU_PUTCHAR(' '); col++; }
+            p++;
+        }
+    }
+    NABU_PRINTF("\n");
+}
+
 /* ------------------ Reply Generation ------------------ */
 /*
    Generates a reply by walking the Markov chain from the start token.
@@ -1035,7 +1087,7 @@ void generate_reply(void)
                 strcat(reply_buf, ".");
         }
 
-        NABU_PRINTF("NIALL: %s\n", reply_buf);
+        print_reply(reply_buf);
     }
 }
 
@@ -1486,9 +1538,15 @@ void handle_command(char *cmd)
 #ifdef __NABU__
         NABU_PRINTF(" #mem         - Memory stats\n");
 #endif
+#if SCREEN_COLS <= 40
+        NABU_PRINTF(" #save [file] - Save (" NABU_DEFAULT_FILE ")\n"
+            " #load [file] - Load (" NABU_DEFAULT_FILE ")\n"
+            " #quit        - Exit\n");
+#else
         NABU_PRINTF(" #save [file] - Save to " NIALL_STORAGE " (" NABU_DEFAULT_FILE ")\n"
             " #load [file] - Load from " NIALL_STORAGE " (" NABU_DEFAULT_FILE ")\n"
             " #quit        - Exit\n");
+#endif
 #ifdef __NABU__
         NABU_PRINTF("\nLive data: " IA_FILE NIALL_TITLE_SEP " (auto, reset on #fresh)\n");
 #endif
