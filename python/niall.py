@@ -15,24 +15,42 @@ Word rules (matching AMOS BASIC / C version):
   - All input lowercased before learning
 
 Commands:
-    #fresh          Clear the dictionary
-    #list           Show the dictionary
-    #save [file]    Save dictionary to JSON  (default: niall.json)
-    #load [file]    Load dictionary from JSON (default: niall.json)
-    #help           Show this command list
-    #quit           Exit
-    (any text)      Teach NIALL a sentence and get a reply
+    #fresh              Clear the dictionary
+    #list               Show the dictionary
+    #save [file]        Save dictionary to JSON    (default: niall.json)
+    #load [file]        Load any NIALL format      (default: niall.json)
+    #export [file]      Export to v5 NABU binary   (default: NIALL.DAT)
+    #exportcpm [file]   Export to v4 CP/M binary   (default: NIALL.DAT)
+    #help               Show this command list
+    #quit               Exit
+    (any text)          Teach NIALL a sentence and get a reply
 """
 
 import json
 import os
 import random
 import re
+import struct
 import sys
+
+try:
+    import niallconv as _conv
+    _CONV_AVAILABLE = True
+except ImportError:
+    _CONV_AVAILABLE = False
 
 VERSION      = "1.0"
 DEFAULT_FILE = "niall.json"
-MAX_REPLY    = 100      # max words in a generated reply — stops infinit loops
+MAX_REPLY    = 100      # max words in a generated reply — stops infinite loops
+
+# Binary export constants — must match niall.c
+_MAGIC           = b"NIAL"
+_V4_VERSION      = 4;    _V5_VERSION      = 5
+_V4_END_TOKEN    = 1000; _V5_END_TOKEN    = 2000
+_V4_MAX_WORDS    = 999;  _V5_MAX_WORDS    = 1999
+_V4_MAX_PAIRS    = 25;   _V5_MAX_PAIRS    = 63
+_V4_START_PAIRS  = 100;  _V5_START_PAIRS  = 255
+_MAX_WORD_LEN    = 31
 
 # Sentence boundary markers. Double underscores so they won't
 # collide with any real word after clean_word() strips to alphanumerics.
@@ -186,24 +204,103 @@ def do_save(filename):
 
 def do_load(filename):
     """
-    Read a previously saved JSON file back into the dictionary.
+    Load any NIALL format (JSON, v3/v4/v5 binary, AMOS ASCII) via niallconv,
+    or plain JSON if niallconv is not available.
     Replaces whatever is currently in memory — same as the C version.
     """
     global dictionary
     if not os.path.exists(filename):
         print(f"File not found: {filename}")
         return
+    if _CONV_AVAILABLE:
+        try:
+            fmt_name, new_dict, report, _ = _conv.load_any(filename)
+            if report:
+                for line in report:
+                    print(f"  {line}")
+            dictionary = new_dict
+            word_count = sum(1 for w in dictionary if w not in (START, END))
+            print(f"Loaded {filename} ({fmt_name}). {word_count} word(s).")
+        except Exception as e:
+            print(f"Load failed: {e}")
+    else:
+        # niallconv not available — JSON only
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if "dictionary" not in data:
+                print("Invalid save file.")
+                return
+            dictionary = data["dictionary"]
+            word_count = sum(1 for w in dictionary if w not in (START, END))
+            print(f"Loaded {filename}. {word_count} word(s).")
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Load failed: {e}")
+
+
+def do_export(filename, nabu=True):
+    """Export dictionary to v5 NABU binary (nabu=True) or v4 CP/M binary (nabu=False)."""
+    version     = _V5_VERSION     if nabu else _V4_VERSION
+    end_token   = _V5_END_TOKEN   if nabu else _V4_END_TOKEN
+    max_words   = _V5_MAX_WORDS   if nabu else _V4_MAX_WORDS
+    max_pairs   = _V5_MAX_PAIRS   if nabu else _V4_MAX_PAIRS
+    start_pairs = _V5_START_PAIRS if nabu else _V4_START_PAIRS
+    fmt_name    = "v5 NABU"       if nabu else "v4 CP/M"
+
+    real_words = sorted(w for w in dictionary if w not in (START, END))
+    if len(real_words) > max_words:
+        print(f"Warning: {len(real_words)} words exceeds {fmt_name} limit of {max_words}. "
+              f"Truncating to first {max_words} alphabetically.")
+        real_words = real_words[:max_words]
+
+    num_words   = len(real_words)
+    word_to_idx = {w: i for i, w in enumerate(real_words, 1)}
+    word_to_idx[START] = 0
+    word_to_idx[END]   = end_token
+
+    payload      = bytearray()
+    checksum_acc = 0
+
+    def emit(b):
+        nonlocal checksum_acc
+        payload.extend(b)
+        for byte in b:
+            checksum_acc += byte
+        checksum_acc &= 0xFFFF
+
+    def make_link_record(successors, cap):
+        pairs = [(word_to_idx[dst], cnt)
+                 for dst, cnt in successors.items() if dst in word_to_idx]
+        pairs.sort(key=lambda x: x[1], reverse=True)
+        pairs = pairs[:cap]
+        total = sum(c for _, c in pairs)
+        rec   = struct.pack("<HB", total, len(pairs))
+        for tid, cnt in pairs:
+            rec += struct.pack("<HH", tid, cnt)
+        return rec
+
+    for i in range(num_words + 1):
+        if i == 0:
+            emit(struct.pack("B", 0))
+            emit(make_link_record(dictionary.get(START, {}), start_pairs))
+        else:
+            word = real_words[i - 1]
+            wlen = min(len(word), _MAX_WORD_LEN)
+            emit(struct.pack("B", wlen))
+            emit(word[:wlen].encode("ascii", errors="replace"))
+            emit(make_link_record(dictionary.get(word, {}), max_pairs))
+
+    header = _MAGIC + struct.pack("<BH", version, num_words)
+    footer = struct.pack("<H", checksum_acc)
+
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if "dictionary" not in data:
-            print("Invalid save file.")
-            return
-        dictionary = data["dictionary"]
-        word_count = sum(1 for w in dictionary if w not in (START, END))
-        print(f"Loaded {filename}. {word_count} word(s).")
-    except (OSError, json.JSONDecodeError) as e:
-        print(f"Load failed: {e}")
+        with open(filename, "wb") as f:
+            f.write(header)
+            f.write(payload)
+            f.write(footer)
+        print(f"Exported {num_words} words to {filename} ({fmt_name}).")
+    except OSError as e:
+        print(f"Export failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -234,13 +331,21 @@ def process_input(line):
         elif cmd.startswith("#load"):
             parts = line.split(None, 1)
             do_load(parts[1] if len(parts) > 1 else DEFAULT_FILE)
+        elif cmd.startswith("#exportcpm"):
+            parts = line.split(None, 1)
+            do_export(parts[1] if len(parts) > 1 else "NIALL.DAT", nabu=False)
+        elif cmd.startswith("#export"):
+            parts = line.split(None, 1)
+            do_export(parts[1] if len(parts) > 1 else "NIALL.DAT", nabu=True)
         elif cmd == "#help":
             print("Commands:")
-            print("  #fresh          Clear the dictionary")
-            print("  #list           Show the dictionary")
-            print("  #save [file]    Save to JSON (default: niall.json)")
-            print("  #load [file]    Load from JSON (default: niall.json)")
-            print("  #quit           Exit")
+            print("  #fresh              Clear the dictionary")
+            print("  #list               Show the dictionary")
+            print("  #save [file]        Save to JSON        (default: niall.json)")
+            print("  #load [file]        Load any format     (default: niall.json)")
+            print("  #export [file]      Export v5 NABU bin  (default: NIALL.DAT)")
+            print("  #exportcpm [file]   Export v4 CP/M bin  (default: NIALL.DAT)")
+            print("  #quit               Exit")
         elif cmd == "#quit":
             print("Bye.")
             sys.exit(0)
