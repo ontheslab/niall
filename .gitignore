@@ -26,6 +26,8 @@ NIALLCON
 NIALLN
 NIALLN80
 NIALLLT
+NIALL32
+NIALL40
 
 # Local-only folders
 history/
@@ -38,6 +40,7 @@ LOGS/
 # Release notes (temporary, used for gh release create then discarded)
 RELEASE_*.md
 
+xfer.bat
 xfer_n.bat
 xfer.bat
 build_utils.bat
