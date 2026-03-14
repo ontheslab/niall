@@ -9,9 +9,11 @@ echo ***************************************************************************
 echo  NIALL Build Script
 echo ****************************************************************************
 
-if /I "%1"=="nabu"   goto build_nabu
-if /I "%1"=="nabu80" goto build_nabu80
+if /I "%1"=="nabu"    goto build_nabu
+if /I "%1"=="nabu80"  goto build_nabu80
 if /I "%1"=="latency" goto build_latency
+if /I "%1"=="cpm40"   goto build_cpm40
+if /I "%1"=="cpm32"   goto build_cpm32
 
 :build_release
 echo  Building NIALL (release)...
@@ -37,7 +39,7 @@ echo  Output:
 for %%F in (NIALLN.nabu) do echo    %%F  %%~zF bytes
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency^|cpm40^|cpm32]
 echo ****************************************************************************
 exit /b 0
 
@@ -50,7 +52,7 @@ echo  Output:
 for %%F in (NIALLN.nabu) do echo    %%F  %%~zF bytes
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency^|cpm40^|cpm32]
 echo ****************************************************************************
 exit /b 0
 
@@ -63,7 +65,33 @@ echo  Output:
 for %%F in (NIALLLT.nabu) do echo    %%F  %%~zF bytes
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency^|cpm40^|cpm32]
+echo ****************************************************************************
+exit /b 0
+
+:build_cpm40
+echo  Building NIALL40 (CP/M, 40-col display)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size -DCPM_COLS=40 niall.c -o NIALL40
+if errorlevel 1 goto fail
+echo.
+echo  Output:
+for %%F in (NIALL40.COM) do echo    %%F  %%~zF bytes
+echo.
+echo ****************************************************************************
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency^|cpm40^|cpm32]
+echo ****************************************************************************
+exit /b 0
+
+:build_cpm32
+echo  Building NIALL32 (CP/M, 32-col display)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size -DCPM_COLS=32 niall.c -o NIALL32
+if errorlevel 1 goto fail
+echo.
+echo  Output:
+for %%F in (NIALL32.COM) do echo    %%F  %%~zF bytes
+echo.
+echo ****************************************************************************
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency^|cpm40^|cpm32]
 echo ****************************************************************************
 exit /b 0
 
@@ -75,7 +103,7 @@ for %%F in (NIALL.COM NIALLCHK.COM NIALLCON.COM NIALLASC.COM) do (
 )
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency^|cpm40^|cpm32]
 echo ****************************************************************************
 exit /b 0
 
