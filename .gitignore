@@ -39,7 +39,9 @@ LOGS/
 RELEASE_*.md
 
 xfer_n.bat
+xfer.bat
 build_utils.bat
+nialllt.c
 
 # Depreciated code
 nival.c
