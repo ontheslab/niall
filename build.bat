@@ -9,9 +9,9 @@ echo ***************************************************************************
 echo  NIALL Build Script
 echo ****************************************************************************
 
-if /I "%1"=="debug" goto build_debug
 if /I "%1"=="nabu"   goto build_nabu
 if /I "%1"=="nabu80" goto build_nabu80
+if /I "%1"=="latency" goto build_latency
 
 :build_release
 echo  Building NIALL (release)...
@@ -37,7 +37,7 @@ echo  Output:
 for %%F in (NIALLN.nabu) do echo    %%F  %%~zF bytes
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [debug^|nabu^|nabu80]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
 echo ****************************************************************************
 exit /b 0
 
@@ -50,23 +50,22 @@ echo  Output:
 for %%F in (NIALLN.nabu) do echo    %%F  %%~zF bytes
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [debug^|nabu^|nabu80]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
 echo ****************************************************************************
 exit /b 0
 
-:build_debug
-echo  Building NIALL (debug)...
-zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size -DDEBUG niall.c -o NIALL
+:build_latency
+echo  Building NIALLLT (NABU IA latency test)...
+zcc +nabu -vn -create-app -compiler=sdcc --opt-code-size nialllt.c -o NIALLLT
 if errorlevel 1 goto fail
-echo  Building NIALLCHK (debug)...
-zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
-if errorlevel 1 goto fail
-echo  Building NIALLCON (debug)...
-zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallcon.c -o NIALLCON
-if errorlevel 1 goto fail
-echo  Building NIALLASC (debug)...
-zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallasc.c -o NIALLASC
-if errorlevel 1 goto fail
+echo.
+echo  Output:
+for %%F in (NIALLLT.nabu) do echo    %%F  %%~zF bytes
+echo.
+echo ****************************************************************************
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
+echo ****************************************************************************
+exit /b 0
 
 :sizes
 echo.
@@ -76,7 +75,7 @@ for %%F in (NIALL.COM NIALLCHK.COM NIALLCON.COM NIALLASC.COM) do (
 )
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [debug^|nabu]
+echo  Build OK. Usage: build.bat [nabu^|nabu80^|latency]
 echo ****************************************************************************
 exit /b 0
 
