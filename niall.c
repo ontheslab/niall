@@ -724,9 +724,24 @@ static void link_update(unsigned int old, unsigned int f)
    is normal text) then generates a reply unless a command was entered.
 */
 
+/* getrnd: read the Z80 R register as an entropy source for seeding srand().
+   R increments on every instruction fetch, so its value at startup reflects
+   BIOS/init timing and is different on each run.
+   SDCC warning 59 ("must return value") is expected — return value is in HL
+   via inline asm and does not need a C return statement. */
+static int getrnd(void)
+{
+    __asm
+    ld a, r
+    ld l, a
+    ld h, #0
+    __endasm;
+}
+
 int main(void)
 {
     NABU_INIT();
+    srand((unsigned int)getrnd());
 #if !defined(__NABU__) && defined(CPM_COLS) && (CPM_COLS) <= 32
     NABU_PRINTF("Welcome to NIALL v" NIALL_VERSION "\nCP/M by Intangybles\nNon Intelligent (AMOS) Learner\nby Matthew Peck (1990)\n\nTry - #help\n\n");
 #elif !defined(__NABU__) && defined(CPM_COLS) && (CPM_COLS) <= 40
