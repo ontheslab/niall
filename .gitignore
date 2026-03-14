@@ -26,6 +26,8 @@ NIALLCON
 NIALLN
 NIALLN80
 NIALLLT
+NIALL32
+NIALL40
 
 # Local-only folders
 history/
@@ -42,6 +44,7 @@ RELEASE_*.md
 .vscode/
 .claude/
 CLAUDE.md
+xfer.bat
 xfer_n.bat
 build_utils.bat
 
