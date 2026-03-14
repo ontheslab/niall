@@ -38,6 +38,19 @@ NABU builds:
 | `NIALLN.nabu`  | 57,460 | NABU native — 40-col TMS9918 (default)|
 | `NIALLN80.nabu`| 57,474 | NABU native — 80-col F18A option     |
 
+Custom CP/M builds (narrow-display — see [Custom Builds release](https://github.com/ontheslab/niall/releases/tag/custom-builds-1.30)):
+
+| File          | Size   | Description                          |
+|---------------|--------|--------------------------------------|
+| `NIALL40.COM` | 48,126 | 40-col display (e.g. some terminals) |
+| `NIALL32.COM` | 48,097 | 32-col display (e.g. CloudCP/M NABU) |
+
+Build custom variants with:
+```
+zcc +cpm ... -DCPM_COLS=40 niall.c -o NIALL40
+zcc +cpm ... -DCPM_COLS=32 niall.c -o NIALL32
+```
+
 ## Usage
 
 Run `NIALL` on CP/M or load `NIALLN.nabu` on NABU. Type sentences to teach NIALL and it will reply.

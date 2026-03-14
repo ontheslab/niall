@@ -16,7 +16,19 @@
    Compiler        : z88dk with SDCC backend (Z80, 64 KB address space)
 
    -----------------------------------------------------------------------
-   Version 1.30 (current)
+   Version 1.31 (current)
+   - Word-wrapped replies: print_reply() wraps NIALL output at SCREEN_COLS
+     (80 default, 40 for NABU 40-col, override with -DCPM_COLS=32 or =40).
+     Continuation lines indent to align with reply text.
+   - Z80 R register used to seed srand() at startup: R increments on every
+     instruction fetch, so its value differs each run — replies are more
+     varied across sessions than the fixed seed in v1.30.
+   - Custom build infrastructure: SCREEN_COLS / CPM_COLS defines enable
+     narrow-display CP/M variants (NIALL32.COM, NIALL40.COM). 32-col build
+     uses short prompts U: / N: and 3-space continuation indent.
+   - NIALL.COM 48,144 bytes. NIALLN.nabu 57,460 bytes.
+
+   Version 1.30
    - Phase 6: IA-paged dictionary for NABU native build.
      NABU vocabulary raised to 2000 words via an LRU (Least Recently
      Used) cache: the 24 most recently accessed word records are kept
@@ -56,7 +68,7 @@
      during #save and #load. NABU-only #mem command added: shows
      words used/free, text pool usage, and LRU cache slots occupied.
    - NIALL.COM 47,851 bytes. NIALLN.nabu 57,159 bytes (1,036 bytes
-     under v1.2 baseline of 58,195).
+     under v1.2 baseline of 58,195). See v1.31 for current sizes.
 
    Version 1.2
    - Phase 5: NABU native build support.
