@@ -5,9 +5,6 @@
    Compile CP/M (production — NABU, TRS-80 Model 4P, Kaypro):
      zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niall.c -o NIALL
 
-   Compile CP/M (debug — enables #debug command):
-     zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size -DDEBUG niall.c -o NIALL
-
    Compile NABU native (homebrew — saves to IA file store):
      zcc +nabu -vn -create-app -compiler=sdcc --opt-code-size niall.c -o NIALLN
 
@@ -19,7 +16,49 @@
    Compiler        : z88dk with SDCC backend (Z80, 64 KB address space)
 
    -----------------------------------------------------------------------
-   Version 1.2 (current)
+   Version 1.30 (current)
+   - Phase 6: IA-paged dictionary for NABU native build.
+     NABU vocabulary raised to 2000 words via an LRU (Least Recently
+     Used) cache: the 24 most recently accessed word records are kept
+     in RAM; older records are evicted to a RetroNET Internet Adapter
+     block file (NIALLPG.DAT) and reloaded on demand. CP/M unchanged.
+     Start token (word 0) always in RAM (ia_srt[1024], 255 pairs).
+     Regular words: 24-slot LRU cache, 63 pairs each, 256-byte IA blocks.
+     Save format v5 (NABU) / v4 (CP/M). Loading v4 on NABU translates
+     CP/M END_TOKEN (1000) to NABU END_TOKEN (2000) — prevents mixed-
+     dictionary chain corruption once vocabulary grows past 999 words.
+   - Current limits:
+                        NABU native    CP/M
+       Max words        1,999          999
+       Start-token      255 pairs      100 pairs
+       Regular word     63 pairs       25 pairs
+       Max sentence     30 words       30 words
+       Max word length  31 chars       31 chars
+       Max input line   159 chars      159 chars
+       Text pool        15,360 bytes   7,680 bytes
+       Link pool        IA file        17,408 bytes RAM
+   - NABU display bugs fixed:
+     * nabu_pb buffer 160->256 bytes: vsprintf overflow for long replies
+       corrupted ia_cache memory, producing split/garbled output.
+     * vdp_newLine() does not reset cursor column — all output after a
+       newline started mid-line, showing stale VRAM to the left ('Au'
+       prefix on replies). Fixed by calling vdp_setCursor2(0, vdp_cursor.y)
+       in both nabu_puts and nabu_getline after every vdp_newLine() call.
+     * Ghost 'Dictionary saved.' after #quit — exit(0) causes NABU to
+       restart the program; vdp_initTextMode does not clear VRAM, so stale
+       text from earlier in the session remained visible. Fixed by calling
+       vdp_clearScreen() in NABU_INIT() after loading the font.
+   - Debug subsystem removed: debug_mode, DBG(), dbg_hex_n(), all
+     #ifdef DEBUG blocks, and #debug command stripped. No binary change
+     (was already compiled out of production builds).
+   - #help indentation trimmed to fit 40-col screen.
+   - NABU: progress dots (every 25 words) and transition count shown
+     during #save and #load. NABU-only #mem command added: shows
+     words used/free, text pool usage, and LRU cache slots occupied.
+   - NIALL.COM 47,851 bytes. NIALLN.nabu 57,159 bytes (1,036 bytes
+     under v1.2 baseline of 58,195).
+
+   Version 1.2
    - Phase 5: NABU native build support.
      Same binary save/load format (v4) — dictionaries are portable between
      CP/M and NABU native builds.
@@ -95,8 +134,6 @@
    - Code size reduction to fit NABU CP/M (smaller TPA than TRS-80 4P).
      z88dk bakes BSS as zeros into the .COM; every BSS byte costs one
      .COM byte. TRS-80 loads up to ~50 KB; NABU limit is ~48.5 KB.
-     * debug_mode/dbg_hex_n/#debug machinery wrapped in #ifdef DEBUG;
-       eliminates all debug branches from the production binary.
      * Build flag changed from --opt-code-speed to --opt-code-size.
      * MAX_SENTENCE reduced 64->32: saves 1,024 bytes BSS.
      * START_LINKS_STR 512->256, START_LINK_PAIRS 50->27: saves 768 bytes.
@@ -141,7 +178,6 @@
      sizes returns <=0. stdio buffers internally and handles alignment.
    - Added fflush(stdout) before all fgets() calls — mandatory on CP/M to
      prevent I/O lockup at the prompt.
-   - Fixed extern int debug_mode initialiser (SDCC warning).
    - Fixed SDCC const-qualifier warnings (warning 196) in ternary expressions.
    - Removed dead END_TOKEN array initialisations (SDCC warning 165).
    - Removed dead c<0 check in generate_reply (SDCC warning 110).
@@ -157,8 +193,6 @@
      link_count == number of id(weight) pairs. Do not modify in-place with
      pointer arithmetic — always rebuild from the parsed array.
    - Added #listd diagnostic list command.
-   - Added #debug command and file-based debug logging (later replaced with
-     printf-based trace in the same version series).
    - Rebuilt load and save — moved to binary files for CP/M safety.
    - Identified that raw write() fails on CP/M sub-sector I/O (fixed in 1.08).
    - Added extra infinite-loop protection in reply generation.
@@ -220,14 +254,24 @@
 #include "../NABULIB/RetroNET-FileStore.h"
 #include "../NABULIB/patterns.h"
 
-/* Format buffer used by nabu_printf — only present in NABU build. */
-static char nabu_pb[160];
+/* ---- Phase 6: IA-paged dictionary constants ---- */
+#define IA_FILE        "NIALLPG.DAT"
+#define IA_FILE_LEN    11
+#define IA_BLOCK       256           /* bytes per link block on IA                 */
+#define IA_MAX_PAIRS   63            /* max pairs: (256-3)/4 = 63 (regular words)  */
+#define IA_SRT_BLOCKS  4             /* blocks reserved for start token at IA[0]   */
+#define IA_SRT_SIZE    (IA_SRT_BLOCKS * IA_BLOCK)          /* = 1024 bytes         */
+#define IA_SRT_PAIRS   255           /* (1024-3)/4 = 255 start-token pairs         */
+#define IA_CACHE_N     24            /* LRU cache slots (regular words only)       */
+
+/* Format buffer used by nabu_printf — sized for "NIALL: " + reply_buf + "\n" + NUL */
+static char nabu_pb[256];
 
 /* nabu_puts: print a NUL-terminated string, converting '\n' to vdp_newLine(). */
 static void nabu_puts(const char *s)
 {
     while (*s) {
-        if (*s == '\n') { vdp_newLine(); s++; }
+        if (*s == '\n') { vdp_newLine(); vdp_setCursor2(0, vdp_cursor.y); s++; }
         else            { vdp_write((uint8_t)*s++); }
     }
 }
@@ -243,22 +287,27 @@ static void nabu_printf(const char *fmt, ...)
 }
 
 /* nabu_getline: read one line from keyboard, null-terminate.
-   Advances the VDP cursor to the next line after the user presses Enter. */
+   Advances the VDP cursor to the next line and resets column to 0.
+   readLine leaves the cursor at the end of the typed text — without the
+   column reset, all subsequent output starts mid-line with stale VRAM visible. */
 static void nabu_getline(char *buf, int maxlen)
 {
     uint8_t len = readLine((uint8_t*)buf, (uint8_t)(maxlen - 1));
     buf[len] = '\0';
     vdp_newLine();
+    vdp_setCursor2(0, vdp_cursor.y);
 }
 
 #ifdef VDP_80COL
 #define NABU_INIT()         do { initNABULib();                                \
                                  vdp_initTextMode80(0x0F, 0x01, true);         \
-                                 vdp_loadASCIIFont(ASCII); } while (0)
+                                 vdp_loadASCIIFont(ASCII);                     \
+                                 vdp_clearScreen(); } while (0)
 #else
 #define NABU_INIT()         do { initNABULib();                                \
                                  vdp_initTextMode(0x0F, 0x01, true);           \
-                                 vdp_loadASCIIFont(ASCII); } while (0)
+                                 vdp_loadASCIIFont(ASCII);                     \
+                                 vdp_clearScreen(); } while (0)
 #endif
 #define NABU_PRINTF(...)    nabu_printf(__VA_ARGS__)
 #define NABU_FLUSH()        /* no-op — VDP output is immediate */
@@ -279,7 +328,9 @@ static void nabu_getline(char *buf, int maxlen)
 
 #endif /* __NABU__ */
 
-#define NIALL_VERSION       "1.2"
+#ifndef NIALL_VERSION
+#define NIALL_VERSION       "1.30"
+#endif
 #ifdef __NABU__
 #define NIALL_STORAGE       "IA"
 #else
@@ -319,16 +370,21 @@ static void nabu_getline(char *buf, int maxlen)
      input_buf[160]            160 bytes
      reply_buf[160]            160 bytes
      scratch / other          ~100 bytes
-     Total                ~30,472 bytes  — .COM: 47,809 bytes; headroom ~691 bytes
+     Total                 ~30,472 bytes  — .COM: 47,809 bytes; headroom ~691 bytes
 */
 
-#define MAX_WORDS      1000    /* real words: indices 1..999; END_TOKEN at 1000 */
+#ifdef __NABU__
+#define MAX_WORDS      2000    /* NABU: link data on IA — 2000 word limit       */
+#define WTEXT_POOL    15360    /* NABU: 15KB text pool (~2000 words avg 7 chars)*/
+#else
+#define MAX_WORDS      1000    /* CP/M: real words: indices 1..999              */
+#define WTEXT_POOL     7680    /* CP/M: 7.5KB word text string pool             */
+#endif
 #define MAX_SENTENCE     30    /* max words parsed per input sentence           */
 #define MAX_INPUT       159    /* max characters per input line (2x80 col)      */
-#define MAX_PAIRS        25    /* max tracked successors per regular word       */
-#define START_PAIRS     100    /* max tracked successors for start token (w[0]) */
-#define WTEXT_POOL     7680    /* 7.5 KB word text string pool                  */
-#define BLINK_POOL    17408    /* 17 KB binary link record pool                 */
+#define MAX_PAIRS        25    /* max tracked successors per regular word (CP/M)*/
+#define START_PAIRS     100    /* max tracked successors for start token (CP/M) */
+#define BLINK_POOL    17408    /* 17KB binary link record pool (CP/M only)      */
 #define MAX_WORD_LEN     31    /* max characters in a dictionary word           */
 
 #define END_TOKEN  (MAX_WORDS) /* sentinel index — marks end of sentence        */
@@ -352,13 +408,29 @@ static void nabu_getline(char *buf, int maxlen)
    WTEXT(i)     = pointer to word i's text string
 */
 
-char         wtext_pool[WTEXT_POOL];       /* 5,120 bytes — packed word strings */
-unsigned int wtext_off[MAX_WORDS + 1];     /* 1,002 bytes — text offset per word*/
+char         wtext_pool[WTEXT_POOL];       /* 7,680 bytes (CP/M) / 15,360 (NABU)*/
+unsigned int wtext_off[MAX_WORDS + 1];     /* 2,002 bytes — text offset per word*/
 unsigned int wtext_hwm;                    /* high-water mark in wtext_pool     */
 
+#ifndef __NABU__
 char         blink_pool[BLINK_POOL];       /* 17,408 bytes — packed link records*/
-unsigned int blink_off[MAX_WORDS + 1];     /* 1,002 bytes — record offset/word  */
+unsigned int blink_off[MAX_WORDS + 1];     /* 2,002 bytes — record offset/word  */
 unsigned int blink_hwm;                    /* high-water mark in blink_pool     */
+#else
+/* NABU: link data lives on IA — managed via 24-slot LRU cache               */
+typedef struct {
+    unsigned int  word_id;
+    unsigned int  lru_tick;
+    unsigned char dirty;
+    unsigned char valid;
+    char          data[IA_BLOCK];
+} IACSlot;
+static IACSlot       ia_cache[IA_CACHE_N]; /* 24 * 262 = 6,288 bytes BSS      */
+static unsigned int  ia_tick;
+static uint8_t       ia_fh;               /* IA file handle (open at startup) */
+static char          ia_srt[IA_SRT_SIZE]; /* start token: always in RAM, 1KB   */
+static unsigned char ia_srt_dirty;        /* 1 = ia_srt needs write-back to IA */
+#endif
 
 int num_words;
 
@@ -399,20 +471,6 @@ static int  wtext_add(unsigned int idx, const char *w);
 static void link_update(unsigned int old, unsigned int f);
 static unsigned int rd_u16(const char *p);
 static void wr_u16(char *p, unsigned int v);
-
-/* --------- Debug Mode (compile with -DDEBUG) --------- */
-/*
-   The entire debug subsystem is compiled out of the normal binary.
-   To enable it, add -DDEBUG to the build command (TRS-80 builds only —
-   the larger code does not fit in the NABU's TPA).
-
-   At runtime, toggle output with the #debug command.
-*/
-
-#ifdef DEBUG
-int debug_mode = 0;
-#define DBG(...) do { if (debug_mode) printf(__VA_ARGS__); } while (0)
-#endif
 
 /* --------------------- Binary Helpers ----------------- */
 /*
@@ -466,12 +524,115 @@ static void init_dict(void)
     wtext_off[0] = 0;
     wtext_hwm = 2;
 
+#ifndef __NABU__
     /* word 0 link record: total=0, n=0 (3 bytes) */
     wr_u16(&blink_pool[0], 0);
     blink_pool[2] = 0;
     blink_off[0] = 0;
     blink_hwm = (unsigned int)BLNK_SZ(0);  /* = 3 */
+#else
+    {
+        int _i;
+        for (_i = 0; _i < IA_CACHE_N; _i++) ia_cache[_i].valid = 0;
+        ia_tick = 0;
+        memset(ia_srt, 0, IA_SRT_SIZE);
+        ia_srt_dirty = 0;
+        rn_fileHandleEmptyFile(ia_fh);
+        rn_fileHandleAppend(ia_fh, 0, (uint16_t)IA_SRT_SIZE, (uint8_t *)ia_srt);
+    }
+#endif
 }
+
+/* ============== Phase 6: IA cache layer (NABU only) ============== */
+#ifdef __NABU__
+
+/* Regular words (id > 0) live after the start-token reservation.
+   Word N is at file offset (IA_SRT_BLOCKS + N - 1) * IA_BLOCK.      */
+static void ia_blk_read(unsigned int id, char *buf) {
+    uint32_t off = (uint32_t)(IA_SRT_BLOCKS + id - 1) * IA_BLOCK;
+    rn_fileHandleRead(ia_fh, (uint8_t *)buf, 0, off, IA_BLOCK);
+}
+
+static void ia_blk_write(unsigned int id, char *buf) {
+    uint32_t off = (uint32_t)(IA_SRT_BLOCKS + id - 1) * IA_BLOCK;
+    rn_fileHandleReplace(ia_fh, off, 0, IA_BLOCK, (uint8_t *)buf);
+}
+
+/* Evict the LRU slot, writing it back if dirty. Returns slot index. */
+static int ia_evict(void) {
+    int i, slot = 0;
+    unsigned int oldest = 0;
+    for (i = 0; i < IA_CACHE_N; i++) {
+        if (!ia_cache[i].valid) return i;
+        if (ia_tick - ia_cache[i].lru_tick > oldest) {
+            oldest = ia_tick - ia_cache[i].lru_tick;
+            slot = i;
+        }
+    }
+    if (ia_cache[slot].dirty)
+        ia_blk_write(ia_cache[slot].word_id, ia_cache[slot].data);
+    ia_cache[slot].valid = 0;
+    return slot;
+}
+
+/* Return pointer to word id's block. Word 0 always returns ia_srt (in RAM).
+   All other words are served from the LRU cache, loaded from IA on miss.    */
+static char *blink_rec(unsigned int id) {
+    int i, slot;
+    if (id == 0) return ia_srt;           /* start token always in RAM */
+    for (i = 0; i < IA_CACHE_N; i++) {
+        if (ia_cache[i].valid && ia_cache[i].word_id == id) {
+            ia_cache[i].lru_tick = ++ia_tick;
+            return ia_cache[i].data;
+        }
+    }
+    slot = ia_evict();
+    ia_blk_read(id, ia_cache[slot].data);
+    ia_cache[slot].word_id = id;
+    ia_cache[slot].valid   = 1;
+    ia_cache[slot].dirty   = 0;
+    ia_cache[slot].lru_tick = ++ia_tick;
+    return ia_cache[slot].data;
+}
+
+static void blink_dirty(unsigned int id) {
+    int i;
+    if (id == 0) { ia_srt_dirty = 1; return; }
+    for (i = 0; i < IA_CACHE_N; i++)
+        if (ia_cache[i].valid && ia_cache[i].word_id == id)
+            { ia_cache[i].dirty = 1; return; }
+}
+
+static void blink_flush(void) {
+    int i;
+    if (ia_srt_dirty) {
+        rn_fileHandleReplace(ia_fh, 0, 0, (uint16_t)IA_SRT_SIZE, (uint8_t *)ia_srt);
+        ia_srt_dirty = 0;
+    }
+    for (i = 0; i < IA_CACHE_N; i++)
+        if (ia_cache[i].valid && ia_cache[i].dirty)
+            { ia_blk_write(ia_cache[i].word_id, ia_cache[i].data);
+              ia_cache[i].dirty = 0; }
+}
+
+/* Append a new zero-filled block for word id to the IA file. */
+static void ia_new_word(unsigned int id) {
+    int slot = ia_evict();
+    memset(ia_cache[slot].data, 0, IA_BLOCK);
+    ia_cache[slot].word_id  = id;
+    ia_cache[slot].valid    = 1;
+    ia_cache[slot].dirty    = 0;
+    ia_cache[slot].lru_tick = ++ia_tick;
+    rn_fileHandleAppend(ia_fh, 0, IA_BLOCK, (uint8_t *)ia_cache[slot].data);
+}
+
+#else
+/* CP/M: blink_rec is a macro, dirty/flush are no-ops */
+#define blink_rec(id)    (&blink_pool[blink_off[(id)]])
+#define blink_dirty(id)  /* no-op */
+#define blink_flush()    /* no-op */
+#endif
+/* ================================================================= */
 
 /* -------------------- link_update() ------------------- */
 /*
@@ -485,11 +646,15 @@ static void init_dict(void)
 
 static void link_update(unsigned int old, unsigned int f)
 {
-    char *rec = &blink_pool[blink_off[old]];
+    char *rec  = blink_rec(old);
     unsigned int total = rd_u16(rec);
     unsigned int n     = (unsigned int)(unsigned char)rec[2];
-    unsigned int max_p = (old == 0) ? (unsigned int)START_PAIRS : (unsigned int)MAX_PAIRS;
-    unsigned int k, new_sz, old_sz;
+#ifdef __NABU__
+    unsigned int max_p = (old == 0) ? (unsigned int)IA_SRT_PAIRS : (unsigned int)IA_MAX_PAIRS;
+#else
+    unsigned int max_p = (old == 0) ? (unsigned int)START_PAIRS  : (unsigned int)MAX_PAIRS;
+#endif
+    unsigned int k;
 
     /* search for existing pair — increment in-place if found */
     for (k = 0; k < n; k++) {
@@ -497,6 +662,7 @@ static void link_update(unsigned int old, unsigned int f)
             unsigned int cnt = rd_u16(rec + BLNK_HDR + k * BLNK_PAIR + 2);
             wr_u16(rec + BLNK_HDR + k * BLNK_PAIR + 2, cnt + 1);
             wr_u16(rec, total + 1);
+            blink_dirty(old);
             return;
         }
     }
@@ -504,20 +670,31 @@ static void link_update(unsigned int old, unsigned int f)
     /* not found — drop silently if at capacity */
     if (n >= max_p) return;
 
-    /* append new record at HWM with n+1 pairs */
-    new_sz = (unsigned int)BLNK_SZ(n + 1);
-    if (blink_hwm + new_sz > (unsigned int)BLINK_POOL) {
-        NABU_PRINTF("Link pool full.\n");
-        return;
+#ifdef __NABU__
+    /* NABU: fixed-size block — add new pair in-place, no HWM growth */
+    wr_u16(rec + BLNK_HDR + n * BLNK_PAIR,     f);
+    wr_u16(rec + BLNK_HDR + n * BLNK_PAIR + 2, 1);
+    rec[2] = (char)(n + 1);
+    wr_u16(rec, total + 1);
+    blink_dirty(old);
+#else
+    /* CP/M: append new larger record at HWM, abandoning old slot */
+    {
+        unsigned int new_sz = (unsigned int)BLNK_SZ(n + 1);
+        unsigned int old_sz = (unsigned int)BLNK_SZ(n);
+        if (blink_hwm + new_sz > (unsigned int)BLINK_POOL) {
+            NABU_PRINTF("Link pool full.\n");
+            return;
+        }
+        memcpy(&blink_pool[blink_hwm], rec, old_sz);
+        wr_u16(&blink_pool[blink_hwm], total + 1);
+        blink_pool[blink_hwm + 2] = (char)(n + 1);
+        wr_u16(&blink_pool[blink_hwm + BLNK_HDR + n * BLNK_PAIR],     f);
+        wr_u16(&blink_pool[blink_hwm + BLNK_HDR + n * BLNK_PAIR + 2], 1);
+        blink_off[old] = blink_hwm;
+        blink_hwm += new_sz;
     }
-    old_sz = (unsigned int)BLNK_SZ(n);
-    memcpy(&blink_pool[blink_hwm], rec, old_sz);           /* copy existing  */
-    wr_u16(&blink_pool[blink_hwm], total + 1);             /* new total      */
-    blink_pool[blink_hwm + 2] = (char)(n + 1);            /* new pair count */
-    wr_u16(&blink_pool[blink_hwm + BLNK_HDR + n * BLNK_PAIR],     f); /* id */
-    wr_u16(&blink_pool[blink_hwm + BLNK_HDR + n * BLNK_PAIR + 2], 1); /* cnt=1 */
-    blink_off[old] = blink_hwm;
-    blink_hwm += new_sz;
+#endif
 }
 
 /* ------------------------ Main ------------------------ */
@@ -532,6 +709,10 @@ int main(void)
     NABU_INIT();
     NABU_PRINTF("Welcome to NIALL" NIALL_TITLE_SEP "(" NIALL_PLATFORM " by Intangybles) v" NIALL_VERSION "\nNon Intelligent (AMOS) Language Learner\nby Matthew Peck (1990)\n\nTry - #help\n\n");
 
+#ifdef __NABU__
+    ia_fh = rn_fileOpen(IA_FILE_LEN, (uint8_t *)IA_FILE,
+                        OPEN_FILE_FLAG_READWRITE, 0xff);
+#endif
     init_dict();
 
     while (1) {
@@ -720,10 +901,12 @@ void learn_sentence(void)
                     NABU_PRINTF("Word pool full.\n");
                     continue;
                 }
+#ifndef __NABU__
                 if (blink_hwm + (unsigned int)(BLNK_SZ(0) + BLNK_SZ(1)) > (unsigned int)BLINK_POOL) {
                     NABU_PRINTF("Link pool full.\n");
                     continue;
                 }
+#endif
 
                 /* commit both at once — no partial failure possible now */
                 num_words++;
@@ -731,10 +914,14 @@ void learn_sentence(void)
                 wtext_off[num_words] = wtext_hwm;
                 wtext_hwm += wlen;
 
+#ifdef __NABU__
+                ia_new_word((unsigned int)num_words);
+#else
                 wr_u16(&blink_pool[blink_hwm], 0);  /* total = 0 */
                 blink_pool[blink_hwm + 2] = 0;       /* n = 0     */
                 blink_off[num_words] = blink_hwm;
                 blink_hwm += (unsigned int)BLNK_SZ(0);
+#endif
 
                 f = num_words;
             }
@@ -783,7 +970,7 @@ void generate_reply(void)
         if (c >= MAX_WORDS || c > num_words)
             break;
 
-        rec   = &blink_pool[blink_off[c]];
+        rec   = blink_rec((unsigned int)c);
         total = rd_u16(rec);
         n     = (unsigned int)(unsigned char)rec[2];
 
@@ -864,7 +1051,7 @@ void generate_reply(void)
      2 bytes  num_words (LE unsigned short)
 
    Payload — one record per entry, entries 0..num_words:
-     1 byte     wlen  word length (0..31); entry 0 always 0
+     1 byte  wlen  word length (0..31); entry 0 always 0
      wlen bytes word text, no trailing NUL stored
      3+n*4 bytes binary link record (n at offset 2, self-describing size)
 
@@ -873,21 +1060,6 @@ void generate_reply(void)
 
    Note: v1.15 does NOT load v3 files. Use NIALLCON to convert v3 -> v4.
 */
-
-/* ------------------- Debug Helpers -------------------- */
-
-#ifdef DEBUG
-static void dbg_hex_n(const char *tag, const unsigned char *p, unsigned int n)
-{
-    unsigned int i;
-    printf("%s", tag);
-    for (i = 0; i < n; i++) {
-        printf("%02X", (unsigned)p[i]);
-        if (i + 1 != n) printf(" ");
-    }
-    printf("\n");
-}
-#endif
 
 /* -------------------- I/O Wrappers -------------------- */
 /*
@@ -906,6 +1078,7 @@ static int read_all(FILE *fp, void *buf, unsigned int n)
     return (unsigned int)fread(buf, 1, n, fp) == n;
 }
 
+
 /* ---------------- Save Dictionary (v4) ---------------- */
 
 void save_dictionary(const char *fname)
@@ -918,15 +1091,22 @@ void save_dictionary(const char *fname)
     unsigned int n, rec_sz;
 
     /* build the 7-byte header — same for both platforms */
-    hdr[0]='N'; hdr[1]='I'; hdr[2]='A'; hdr[3]='L'; hdr[4]=4;
+    hdr[0]='N'; hdr[1]='I'; hdr[2]='A'; hdr[3]='L';
+#ifdef __NABU__
+    hdr[4] = 5;   /* NABU  v5: END_TOKEN=2000 */
+#else
+    hdr[4] = 4;   /* CP/M  v4: END_TOKEN=1000 */
+#endif
     hdr[5] = (unsigned char)(num_words & 0xFF);
     hdr[6] = (unsigned char)(num_words >> 8);
     checksum_calc = 0;
 
 #ifdef __NABU__
+    blink_flush();   /* write all dirty cache entries to IA before exporting */
     {
         uint8_t handle;
         uint8_t flen = (uint8_t)strlen(fname);
+        unsigned long trans_total = 0;
 
         handle = rn_fileOpen(flen, (uint8_t*)fname, OPEN_FILE_FLAG_READWRITE, 0xFF);
         if (handle == 0xFF) { NABU_PRINTF("File error.\n"); return; }
@@ -934,8 +1114,11 @@ void save_dictionary(const char *fname)
 
         rn_fileHandleAppend(handle, 0, 7, hdr);
 
+        NABU_PRINTF("Saving %d words:\n", num_words);
         for (i = 0; i <= num_words; i++) {
             unsigned int j;
+
+            if (i > 0 && (i % 25) == 0) NABU_PRINTF(".");
 
             if (i == 0) {
                 wlen_byte = 0;
@@ -952,9 +1135,10 @@ void save_dictionary(const char *fname)
                     checksum_calc += (unsigned char)WTEXT(i)[j];
             }
 
-            rec    = &blink_pool[blink_off[i]];
+            rec    = blink_rec((unsigned int)i);
             n      = (unsigned int)(unsigned char)rec[2];
             rec_sz = (unsigned int)BLNK_SZ(n);
+            trans_total += (unsigned long)rd_u16(rec);
             rn_fileHandleAppend(handle, 0, (uint16_t)rec_sz, (uint8_t*)rec);
             for (j = 0; j < rec_sz; j++)
                 checksum_calc += (unsigned char)rec[j];
@@ -962,24 +1146,16 @@ void save_dictionary(const char *fname)
 
         rn_fileHandleAppend(handle, 0, 2, (uint8_t*)&checksum_calc);
         rn_fileHandleClose(handle);
-        NABU_PRINTF("Dictionary saved.\n");
+        NABU_PRINTF("\nSaved %d words (%lu transitions).\n", num_words, trans_total);
     }
 #else
     {
         FILE *fp;
 
-#ifdef DEBUG
-        if (debug_mode)
-            printf("\n[SAVE] file='%s' num_words=%d\n", fname, num_words);
-#endif
         remove(fname);
         fp = fopen(fname, "wb");
         if (!fp) { NABU_PRINTF("File error.\n"); return; }
         fseek(fp, 0L, SEEK_SET);
-
-#ifdef DEBUG
-        if (debug_mode) dbg_hex_n("[SAVE] hdr7: ", hdr, 7);
-#endif
 
         if (!write_all(fp, hdr, 7)) { fclose(fp); NABU_PRINTF("Save failed.\n"); return; }
 
@@ -1012,10 +1188,6 @@ void save_dictionary(const char *fname)
         fwrite(&checksum_calc, sizeof(unsigned short), 1, fp);
         fclose(fp);
         NABU_PRINTF("Dictionary saved.\n");
-
-#ifdef DEBUG
-        if (debug_mode) printf("[SAVE] done (checksum=%u).\n", (unsigned int)checksum_calc);
-#endif
     }
 #endif /* __NABU__ */
 }
@@ -1035,6 +1207,7 @@ void load_dictionary(const char *fname)
     {
         uint8_t handle;
         uint8_t flen = (uint8_t)strlen(fname);
+        unsigned long trans_total = 0;
 
         handle = rn_fileOpen(flen, (uint8_t*)fname, OPEN_FILE_FLAG_READONLY, 0xFF);
         if (handle == 0xFF) { NABU_PRINTF("Cannot load file.\n"); return; }
@@ -1047,7 +1220,7 @@ void load_dictionary(const char *fname)
         }
         ver    = (unsigned int)hdr[4];
         disk_n = (unsigned int)hdr[5] | ((unsigned int)hdr[6] << 8);
-        if (ver != 4) {
+        if (ver != 4 && ver != 5) {
             rn_fileHandleClose(handle); NABU_PRINTF("Wrong version.\n"); return;
         }
         if (disk_n > (unsigned int)(MAX_WORDS - 1))
@@ -1056,8 +1229,11 @@ void load_dictionary(const char *fname)
         init_dict();
         checksum_calc = 0;
 
+        NABU_PRINTF("Loading %u words (v%u):\n", disk_n, ver);
         for (i = 0; i <= disk_n; i++) {
             int j;
+
+            if (i > 0 && (i % 25) == 0) NABU_PRINTF(".");
 
             if (rn_fileHandleReadSeq(handle, &wlen_byte, 0, 1) != 1) {
                 rn_fileHandleClose(handle); NABU_PRINTF("Invalid file.\n"); return;
@@ -1101,24 +1277,34 @@ void load_dictionary(const char *fname)
 
             nrec   = (unsigned int)rec_hdr[2];
             rec_sz = (unsigned int)BLNK_SZ(nrec);
-            if (blink_hwm + rec_sz > (unsigned int)BLINK_POOL) {
-                rn_fileHandleClose(handle); NABU_PRINTF("Pool full.\n"); return;
-            }
-            blink_pool[blink_hwm + 0] = (char)rec_hdr[0];
-            blink_pool[blink_hwm + 1] = (char)rec_hdr[1];
-            blink_pool[blink_hwm + 2] = (char)rec_hdr[2];
-            if (nrec > 0) {
-                unsigned int pairs_sz = nrec * (unsigned int)BLNK_PAIR;
-                unsigned int k;
-                if (rn_fileHandleReadSeq(handle, (uint8_t*)&blink_pool[blink_hwm + 3], 0,
-                                         (uint16_t)pairs_sz) != (uint16_t)pairs_sz) {
-                    rn_fileHandleClose(handle); NABU_PRINTF("Invalid file.\n"); return;
+            /* NABU: load into cache/IA — append block for new words */
+            if (i > 0) ia_new_word((unsigned int)i);
+            {
+                char *blk = blink_rec((unsigned int)i);
+                blk[0] = (char)rec_hdr[0];
+                blk[1] = (char)rec_hdr[1];
+                blk[2] = (char)rec_hdr[2];
+                trans_total += (unsigned long)rd_u16(blk);
+                if (nrec > 0) {
+                    unsigned int pairs_sz = nrec * (unsigned int)BLNK_PAIR;
+                    unsigned int k;
+                    if (rn_fileHandleReadSeq(handle, (uint8_t*)(blk + 3), 0,
+                                             (uint16_t)pairs_sz) != (uint16_t)pairs_sz) {
+                        rn_fileHandleClose(handle); NABU_PRINTF("Invalid file.\n"); return;
+                    }
+                    for (k = 0; k < pairs_sz; k++)
+                        checksum_calc += (unsigned char)blk[3 + k];
+                    /* v4: translate CP/M END_TOKEN (1000) to NABU END_TOKEN (2000) */
+                    if (ver == 4) {
+                        for (k = 0; k < nrec; k++) {
+                            if (rd_u16(blk + BLNK_HDR + k * BLNK_PAIR) == 1000u)
+                                wr_u16(blk + BLNK_HDR + k * BLNK_PAIR,
+                                       (unsigned int)END_TOKEN);
+                        }
+                    }
                 }
-                for (k = 0; k < pairs_sz; k++)
-                    checksum_calc += (unsigned char)blink_pool[blink_hwm + 3 + k];
+                blink_dirty((unsigned int)i);
             }
-            blink_off[i] = blink_hwm;
-            blink_hwm += rec_sz;
         }
 
         if (rn_fileHandleReadSeq(handle, (uint8_t*)&checksum_saved, 0, 2) != 2) {
@@ -1127,35 +1313,24 @@ void load_dictionary(const char *fname)
         rn_fileHandleClose(handle);
         if (checksum_calc != checksum_saved) { NABU_PRINTF("Bad checksum.\n"); return; }
         num_words = (int)disk_n;
-        NABU_PRINTF("Loaded %d words from %s\n", num_words, fname);
+        blink_flush();   /* write all loaded blocks to IA file */
+        NABU_PRINTF("\nLoaded %d words (%lu transitions).\n", num_words, trans_total);
     }
 #else
     {
         FILE *fp;
 
-#ifdef DEBUG
-        if (debug_mode)
-            printf("\n[LOAD] file='%s'\n", fname);
-#endif
         fp = fopen(fname, "rb");
         if (!fp) { NABU_PRINTF("Cannot load file.\n"); return; }
         fseek(fp, 0L, SEEK_SET);
 
         if (!read_all(fp, hdr, 7)) { fclose(fp); NABU_PRINTF("Invalid file.\n"); return; }
 
-#ifdef DEBUG
-        if (debug_mode) dbg_hex_n("[LOAD] hdr7: ", hdr, 7);
-#endif
-
         if (hdr[0]!='N' || hdr[1]!='I' || hdr[2]!='A' || hdr[3]!='L') {
             fclose(fp); NABU_PRINTF("Invalid file.\n"); return;
         }
         ver    = (unsigned int)hdr[4];
         disk_n = (unsigned int)hdr[5] | ((unsigned int)hdr[6] << 8);
-
-#ifdef DEBUG
-        if (debug_mode) printf("[LOAD] ver=%u num_words=%u\n", ver, disk_n);
-#endif
 
         if (ver != 4) {
             fclose(fp); NABU_PRINTF("Wrong version.\n"); return;
@@ -1228,12 +1403,6 @@ void load_dictionary(const char *fname)
             }
             blink_off[i] = blink_hwm;
             blink_hwm += rec_sz;
-
-#ifdef DEBUG
-            if (debug_mode && (i == 0 || i == disk_n))
-                printf("[LOAD] record %u '%s'\n", i,
-                       i == 0 ? "(start)" : WTEXT(i));
-#endif
         }
 
         if (fread(&checksum_saved, sizeof(unsigned short), 1, fp) != 1) {
@@ -1243,10 +1412,6 @@ void load_dictionary(const char *fname)
         if (checksum_calc != checksum_saved) { NABU_PRINTF("Bad checksum.\n"); return; }
         num_words = (int)disk_n;
         NABU_PRINTF("Loaded %d words from %s\n", num_words, fname);
-
-#ifdef DEBUG
-        if (debug_mode) printf("[LOAD] done.\n");
-#endif
     }
 #endif /* __NABU__ */
 }
@@ -1285,7 +1450,6 @@ static int page_pause(int *ln)
      #load [file]  — loads a v4 binary dictionary from disk
      #help         — lists the main commands
      #quit         — exits the program
-     #debug        — toggles verbose trace; only in -DDEBUG builds
 */
 
 void handle_command(char *cmd)
@@ -1300,7 +1464,7 @@ void handle_command(char *cmd)
         int i, k;
         pg_nonstop = 0;
         for (i = 0; i <= num_words; i++) {
-            char *rec   = &blink_pool[blink_off[i]];
+            char *rec   = blink_rec((unsigned int)i);
             unsigned int total = rd_u16(rec);
             unsigned int n     = (unsigned int)(unsigned char)rec[2];
             char *w = (i == 0) ? (char*)"(start)" : WTEXT(i);
@@ -1316,7 +1480,18 @@ void handle_command(char *cmd)
         }
     }
     else if (!strcmp(cmd, "#help")) {
-        NABU_PRINTF("Commands:\n  #fresh  - Clear dictionary\n  #list   - List dictionary\n  #save   - Save dictionary to " NIALL_STORAGE "\n  #load   - Load dictionary from " NIALL_STORAGE "\n  #quit   - Exit\n");
+        NABU_PRINTF("Commands:\n"
+            " #fresh       - Clear dictionary\n"
+            " #list        - List dictionary\n");
+#ifdef __NABU__
+        NABU_PRINTF(" #mem         - Memory stats\n");
+#endif
+        NABU_PRINTF(" #save [file] - Save to " NIALL_STORAGE " (" NABU_DEFAULT_FILE ")\n"
+            " #load [file] - Load from " NIALL_STORAGE " (" NABU_DEFAULT_FILE ")\n"
+            " #quit        - Exit\n");
+#ifdef __NABU__
+        NABU_PRINTF("\nLive data: " IA_FILE NIALL_TITLE_SEP " (auto, reset on #fresh)\n");
+#endif
     }
     else if (!strncmp(cmd, "#save", 5)) {
         char fname[64] = "";
@@ -1340,10 +1515,14 @@ void handle_command(char *cmd)
         if (fname[0] == 0) strcpy(fname, NABU_DEFAULT_FILE);
         load_dictionary(fname);
     }
-#ifdef DEBUG
-    else if (!strcmp(cmd, "#debug")) {
-        debug_mode = !debug_mode;
-        printf("Debug mode %s\n", debug_mode ? "ON" : "OFF");
+#ifdef __NABU__
+    else if (!strcmp(cmd, "#mem")) {
+        int i, used = 0;
+        for (i = 0; i < IA_CACHE_N; i++)
+            if (ia_cache[i].valid) used++;
+        NABU_PRINTF("Words: %d/%d\n", num_words, MAX_WORDS - 1);
+        NABU_PRINTF("Text:  %u/%u bytes\n", wtext_hwm, WTEXT_POOL);
+        NABU_PRINTF("Cache: %d/%d slots\n", used, IA_CACHE_N);
     }
 #endif
     else if (!strcmp(cmd, "#quit")) {

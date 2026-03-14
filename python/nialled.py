@@ -26,7 +26,8 @@ Commands
   recount                   Validate all counts
   load [file]               Load any NIALL format (replaces current dict)
   save [file]               Save to JSON
-  export [file]             Export to v4 binary (NIALL.DAT)
+  export [file]             Export to v4 binary  CP/M  (NIALL.DAT)
+  export-nabu [file]        Export to v5 binary  NABU  (NIALL.DAT)
   help                      Show this list
   quit                      Exit (warns if unsaved changes)
 
@@ -51,7 +52,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 try:
-    from niallconv import load_any, write_json, write_binary, START, END
+    from niallconv import load_any, write_json, write_binary, write_nabu_binary, START, END
     _CONV_AVAILABLE = True
 except ImportError:
     _CONV_AVAILABLE = False
@@ -639,7 +640,21 @@ def cmd_export(args):
         path = os.path.splitext(path)[0] + ".DAT"
     try:
         n, checksum = write_binary(dictionary, path)
-        print(f"  Exported: {path}  ({n} words, checksum {checksum:#06x})")
+        print(f"  Exported: {path}  (v4 CP/M, {n} words, checksum {checksum:#06x})")
+    except Exception as e:
+        print(f"  Export failed: {e}")
+
+
+def cmd_export_nabu(args):
+    if not _CONV_AVAILABLE:
+        print("  niallconv.py not found — cannot export binary.")
+        return
+    path = args[0] if args else "NIALL.DAT"
+    if not path.upper().endswith(".DAT"):
+        path = os.path.splitext(path)[0] + ".DAT"
+    try:
+        n, checksum = write_nabu_binary(dictionary, path)
+        print(f"  Exported: {path}  (v5 NABU, {n} words, checksum {checksum:#06x})")
     except Exception as e:
         print(f"  Export failed: {e}")
 
@@ -673,8 +688,9 @@ COMMANDS = {
     "recount": cmd_recount,
     "load":    cmd_load,
     "save":    cmd_save,
-    "export":  cmd_export,
-    "help":    cmd_help,
+    "export":      cmd_export,
+    "export-nabu": cmd_export_nabu,
+    "help":        cmd_help,
     "?":       cmd_help,
 }
 
