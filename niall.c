@@ -15,7 +15,22 @@
    Compiler        : z88dk with SDCC backend (Z80, 64 KB address space)
 
    -----------------------------------------------------------------------
-   Version 1.13 (current)
+   Version 1.14 (current)
+   - Phase 3: Option B Shared Link Pool.
+     Replaced fixed WordEntry words[] array with parallel arrays:
+       word_text[MAX_WORDS+1][MAX_WORD_LEN+1] — word text for each slot
+       link_off[MAX_WORDS+1] / link_len[MAX_WORDS+1] — pool index/size
+       link_pool[LINK_POOL] — shared 14 KB link string storage
+     All words including the start token (index 0) use the same pool;
+     no special buffer for index 0. MAX_WORDS increased from 150 to 250.
+     START_LINK_PAIRS=50 (start token) / MAX_LINK_PAIRS=25 (all others).
+     BSS stays ~27,400 bytes; .COM target remains under 48.5 KB.
+     Save/load file format (v3 binary) unchanged.
+   - Removed: WordEntry struct, start_word_links[], MAX_LINKS_STR,
+     START_LINKS_STR (old fixed-buffer version).
+   - Added: pool_alloc(), pool_commit(), init_dict(), LINK_POOL.
+
+   Version 1.13
    - Dict-full message now resets per learn_sentence call (once per input
      sentence) rather than once per program run, so it fires every time a
      sentence fails to add new words.
@@ -85,7 +100,7 @@
    - Moved from v2 to v3 save format: 7-byte header (magic+ver+num_words,
      no checksum in header), variable-length records, 2-byte checksum at end.
 
-   Version 1.07  (Move to Hi-Tech C & back — multiple sub-revisions a–j)
+   Version 1.07  (Move to Hi-Tech C & back — multiple sub-revisions a-j)
    - Diagnosed and fixed learn function not updating memory correctly.
    - Clarified link string invariant: total == sum of all weights,
      link_count == number of id(weight) pairs. Do not modify in-place with
@@ -140,49 +155,62 @@
    (z88dk includes BSS as zeros in the CP/M flat binary). Values below
    are tuned so the total .COM fits in the NABU's TPA (~48.5 KB limit).
 
-   END_TOKEN is the end-of-sentence sentinel. It occupies the slot at
-   words[MAX_WORDS] and is never stored as a real dictionary word; it
-   behaves like the "." token in the original AMOS BASIC version.
+   END_TOKEN is the end-of-sentence sentinel. It occupies index MAX_WORDS
+   and is never stored as a real dictionary word; it behaves like the "."
+   token in the original AMOS BASIC version.
 
    Link string format: "total|id(cnt)id(cnt)..."
      total = sum of all transition counts from this word
      id    = dictionary index of the next word
      cnt   = number of times that transition was observed
 
-   Pair size budget (worst case: "150(9999)" = 10 chars, header "99999|" = 6):
-     Regular words : 6 + 11*10 = 116 < 128  — always fits in MAX_LINKS_STR
-     Start token   : 6 + 50*10 = 506 < 511  — always fits in START_LINKS_STR
+   Pair size budget (worst case id=300, cnt<=9999 -> "300(9999)"=9 chars,
+   header up to "299970|"=7 chars for 30 pairs of max cnt):
+     Any word: 7 + 30*9 = 277 — snprintf truncates at 255 gracefully.
+     In practice (CP/M chatbot usage) link strings stay well under 256.
+
+   BSS breakdown (approx, int=2 bytes on Z80/SDCC):
+     word_text[251][32]    8,032 bytes
+     link_off[251]           502 bytes
+     link_len[251]           502 bytes
+     link_pool[14336]     14,336 bytes
+     scratch / other       2,212 bytes
+     Total               ~25,584 bytes  — .COM target: < 48,500 bytes
 */
 
-#define MAX_WORDS        150   /* real words occupy indices 1..149            */
-#define MAX_SENTENCE      32   /* max words parsed per input sentence         */
-#define MAX_INPUT        255   /* max characters per input line               */
-#define MAX_LINKS_STR    128   /* link string buffer per regular word         */
-#define MAX_LINK_PAIRS    11   /* max tracked successors per regular word     */
-#define START_LINKS_STR  512   /* link string buffer for words[0] start token */
-#define START_LINK_PAIRS  50   /* max tracked successors for words[0]         */
-#define MAX_WORD_LEN      31   /* max characters in a dictionary word         */
+#define MAX_WORDS       250    /* real words: indices 1..249; END_TOKEN at 250 */
+#define MAX_SENTENCE     32    /* max words parsed per input sentence           */
+#define MAX_INPUT       255    /* max characters per input line                 */
+#define MAX_LINK_PAIRS   25    /* max tracked successors per regular word       */
+#define START_LINK_PAIRS 50    /* max tracked successors for start token (w[0]) */
+#define LINK_POOL     14336    /* shared link string pool (14 KB)               */
+#define MAX_WORD_LEN     31    /* max characters in a dictionary word           */
 
-#define END_TOKEN (MAX_WORDS)  /* sentinel index — marks end of sentence      */
+#define END_TOKEN (MAX_WORDS)  /* sentinel index — marks end of sentence        */
 
 /* ------------------ Data Structures ------------------- */
 /*
-   WordEntry holds one dictionary entry. The links string encodes all
-   observed transitions from that word in compact text form so it can
-   be inspected, saved and loaded without binary struct concerns.
+   Parallel arrays replace the old WordEntry struct. Every word including
+   the start token (index 0) uses the same shared link_pool. No special-
+   casing for index 0 anywhere in the code.
 
-   words[0]          — start-of-sentence token (word text is a single space)
-   words[1..n]       — real dictionary words, n == num_words
-   words[END_TOKEN]  — not a real entry; index used as the end sentinel only
+   word_text[i]   — NUL-terminated text for dictionary entry i
+   link_off[i]    — byte offset into link_pool for entry i's link string
+   link_len[i]    — bytes reserved for entry i in link_pool
+   link_pool      — shared storage for all link strings
+   pool_hwm       — high-water mark: next free byte in link_pool
+
+   Index 0           = start-of-sentence token (word text is " ")
+   Index 1..num_words = real dictionary words
+   Index END_TOKEN    = end-of-sentence sentinel (never has real links)
 */
 
-typedef struct {
-    char word[32];
-    char links[MAX_LINKS_STR];
-} WordEntry;
+char         word_text[MAX_WORDS + 1][MAX_WORD_LEN + 1]; /* 251x32 =  8,032 bytes */
+unsigned int link_off[MAX_WORDS + 1];                     /* 251x2  =    502 bytes */
+unsigned int link_len[MAX_WORDS + 1];                     /* 251x2  =    502 bytes */
+char         link_pool[LINK_POOL];                        /* shared = 14,336 bytes */
+unsigned int pool_hwm;                                    /* high-water mark        */
 
-/* Dictionary */
-WordEntry words[MAX_WORDS + 1];
 int num_words = 0;
 
 /* Input and sentence buffers */
@@ -197,19 +225,16 @@ int  sentence_len = 0;
    or stdio state. Static placement keeps them in BSS where their size
    is already accounted for in the .COM file size.
 
-   start_word_links — link string for words[0]; separate from WordEntry
-   because the start token needs a much larger buffer than regular words.
-
    link_parse_buf / link_rebuild_buf — shared workspace for learn_sentence
    so it never needs a large stack allocation during sentence processing.
+   io_lrec enlarged to 256 to match the larger possible link strings.
 */
 
-static unsigned char io_wrec[32];                  /* save/load word scratch  */
-static unsigned char io_lrec[MAX_LINKS_STR];       /* save/load links scratch */
+static unsigned char io_wrec[32];        /* save/load word scratch  */
+static unsigned char io_lrec[256];       /* save/load links scratch */
 
-static char start_word_links[START_LINKS_STR];     /* words[0] link string    */
-static char link_parse_buf[START_LINKS_STR];       /* learn_sentence parse    */
-static char link_rebuild_buf[START_LINKS_STR];     /* learn_sentence rebuild  */
+static char link_parse_buf[256];         /* learn_sentence parse    */
+static char link_rebuild_buf[256];       /* learn_sentence rebuild  */
 
 /* Command flag — set by user_input() when a # command is processed so
    the main loop knows not to call generate_reply() for that turn. */
@@ -227,6 +252,9 @@ void save_dictionary(const char *fname);
 void load_dictionary(const char *fname);
 int  valid_word(const char *w);
 int  validate_links(const char *s, int *total_val, int *sum_cnt, int *pair_count);
+static void init_dict(void);
+static int  pool_alloc(unsigned int idx, unsigned int len);
+static int  pool_commit(unsigned int idx, char *buf);
 
 /* --------- Debug Mode (compile with -DDEBUG) --------- */
 /*
@@ -235,8 +263,6 @@ int  validate_links(const char *s, int *total_val, int *sum_cnt, int *pair_count
    the larger code does not fit in the NABU's TPA).
 
    At runtime, toggle output with the #debug command.
-   DBG() macro calls are available throughout but currently unused;
-   explicit if (debug_mode) blocks are used in save/load for fine control.
 */
 
 #ifdef DEBUG
@@ -248,22 +274,77 @@ int debug_mode = 0;                  /* 0 = off, 1 = on — toggled by #debug  *
    once per program run. Also reset by #fresh. */
 static int dict_full_warned = 0;
 
+/* -------------------- Pool Management ----------------- */
+/*
+   pool_alloc reserves len bytes for word idx at the current HWM.
+   Returns 1 on success, 0 if the pool is full.
+   The caller is responsible for writing content to link_pool[link_off[idx]].
+
+   pool_commit writes the NUL-terminated string in buf to word idx's pool
+   slot. If the rebuilt string fits in the existing slot it is written
+   in-place. Otherwise a new slot is appended at HWM (the old bytes are
+   wasted; pool fragmentation is acceptable for CP/M chatbot vocabulary sizes).
+   Returns 1 on success, 0 if the pool is full.
+*/
+
+static int pool_alloc(unsigned int idx, unsigned int len)
+{
+    if (pool_hwm + len > (unsigned int)LINK_POOL) return 0; /* pool's chockers — bail out before writing anything */
+    link_off[idx] = pool_hwm;   /* record where this word's link string starts in the pool */
+    link_len[idx] = len;        /* record how many bytes are reserved for it */
+    pool_hwm += len;            /* advance the high-water mark past the newly reserved slot */
+    return 1;                   /* caller must now write the actual content at link_pool[link_off[idx]] */
+}
+
+static int pool_commit(unsigned int idx, char *buf)
+{
+    unsigned int need = (unsigned int)strlen(buf) + 1; /* bytes required: string length plus NUL terminator */
+    if (need <= link_len[idx]) {                       /* rebuilt string fits within the existing slot */
+        memcpy(&link_pool[link_off[idx]], buf, need);  /* overwrite in-place — no pool space wasted */
+        return 1;
+    }
+    if (pool_hwm + need > (unsigned int)LINK_POOL) return 0; /* no room to grow — pool is full */
+    link_off[idx] = pool_hwm;            /* redirect this word to a fresh slot at the end of used space */
+    link_len[idx] = need;                /* update the reserved size to match the larger string */
+    memcpy(&link_pool[pool_hwm], buf, need); /* write the new string at the high-water mark */
+    pool_hwm += need;                    /* advance HWM past the new slot; old slot bytes are abandoned */
+    return 1;
+}
+
+/* -------------------- init_dict() --------------------- */
+/*
+   Resets the entire dictionary to its initial state.
+   Called from main() on startup and from the #fresh command.
+   Sets up the start-of-sentence token at index 0 with an initial
+   "0|" link string pre-allocated in the pool at offset 0.
+*/
+
+static void init_dict(void)
+{
+    /* num_words=0 makes all slots 1+ inaccessible; each slot is fully
+       written (word_text, pool_alloc) before it is ever read, so no
+       memset of the full arrays is needed. */
+    num_words = 0;   /* no real words yet — all array slots 1+ are invisible to the rest of the code */
+    pool_hwm  = 3;   /* first 3 bytes are already spoken for by the start token's "0|" string below */
+
+    /* words[0] = start-of-sentence token */
+    word_text[0][0] = ' '; word_text[0][1] = '\0';           /* start token text is a single space, matching AMOS BASIC */
+    link_pool[0] = '0'; link_pool[1] = '|'; link_pool[2] = '\0'; /* "0|" means total=0, no transitions recorded yet */
+    link_off[0] = 0; link_len[0] = 3;  /* start token owns bytes 0..2 in the pool; HWM starts at 3 */
+}
+
 /* ------------------------ Main ------------------------ */
 /*
-   Initialises the start-of-sentence token then enters the main loop.
+   Initialises the dictionary then enters the main loop.
    Each iteration reads one line of user input (learning from it if it
    is normal text) then generates a reply unless a command was entered.
 */
 
 int main(void)
 {
-    printf("Welcome to NIALL (CP/M C port by Intangybles) v1.13\n");
-    printf("Non Intelligent (AMOS) Language Learner\n");
-    printf("Original by Matthew Peck (1990)\n\n");
-    printf("Type #help - for Commands\n\n");
+    puts("Welcome to NIALL (CP/M C port by Intangybles) v1.14\nNon Intelligent (AMOS) Language Learner\nOriginal by Matthew Peck (1990)\n\nType #help - for Commands\n");
 
-    strcpy(words[0].word, " ");
-    words[0].links[0] = 0;
+    init_dict();
 
     while (1) {
         user_input();
@@ -372,7 +453,7 @@ int valid_word(const char *w)
    Returns 1 if the string is structurally correct AND total equals the
    sum of all counts (AMOS-correct). Returns 0 otherwise.
 
-   Option - fills the caller's output variables:
+   Fills the caller's output variables:
      total_val  — the parsed total field
      sum_cnt    — the computed sum of all counts
      pair_count — number of id(cnt) pairs found
@@ -536,7 +617,7 @@ void strip_punctuation(char *s)
 int find_word(const char *w)
 {
     for (int i = 1; i <= num_words; i++)
-        if (!strcmp(words[i].word, w))
+        if (!strcmp(word_text[i], w))
             return i;
     return 0;
 }
@@ -547,18 +628,15 @@ int find_word(const char *w)
    word transitions in the dictionary (Markov chain learning).
 
    For each adjacent pair (old -> f) in the sentence:
-     - If f is a new word and the dictionary is not full, add it.
+     - If f is a new word and the dictionary is not full, add it with an
+       initial "0|" pool slot.
      - Parse the current link string for 'old' into ids[]/cnts[] arrays.
      - Increment the count for transition old->f, or append a new pair.
-     - Recompute total as the sum of all counts and rebuild the string.
+     - Recompute total as the sum of all counts and commit to the pool.
    The final word is linked to END_TOKEN to mark the sentence boundary.
 
-   Key aspects maintained:
-     - total always equals the sum of all cnt values in the link string.
-     - The rebuilt string always fits within the buffer (MAX_LINK_PAIRS
-       and START_LINK_PAIRS cap the number of tracked transitions).
-     - If old==0 at the end of the sentence, no valid words were processed
-       so the END_TOKEN link is skipped (prevents start->END entries).
+   All words (including start token at index 0) use the shared pool via
+   pool_commit; no special-casing for index 0.
 */
 
 void learn_sentence(void)
@@ -566,7 +644,7 @@ void learn_sentence(void)
     int old = 0;   /* index of the previous word (0 = start token) */
 
     /* Static arrays avoid large stack allocations on CP/M's small stack.
-       Sized for the start token's larger capacity. */
+       Sized to START_LINK_PAIRS (the larger limit) so both word types fit. */
     static int ids[START_LINK_PAIRS];
     static int cnts[START_LINK_PAIRS];
 
@@ -602,68 +680,71 @@ void learn_sentence(void)
                        added word still receives its END_TOKEN link */
                     continue;
                 }
-                num_words++;
-                strncpy(words[num_words].word, sentence_words[h], MAX_WORD_LEN);
-                words[num_words].word[MAX_WORD_LEN] = 0;
-                words[num_words].links[0] = 0;
-                f = num_words;
+                num_words++;                                                    /* claim the next available dictionary slot */
+                strncpy(word_text[num_words], sentence_words[h], MAX_WORD_LEN); /* copy the word text into that slot */
+                word_text[num_words][MAX_WORD_LEN] = 0;                         /* guarantee NUL termination at the boundary */
+
+                /* allocate initial "0|" pool slot for this new word */
+                if (pool_hwm + 3 > (unsigned int)LINK_POOL) { /* not enough room for even a bare "0|" entry */
+                    printf("Link pool full.\n");
+                    num_words--;   /* undo the slot claim so the dictionary stays consistent */
+                    continue;
+                }
+                link_pool[pool_hwm]   = '0';   /* write "0|" directly at the high-water mark... */
+                link_pool[pool_hwm+1] = '|';   /* ...it means: total=0, no transitions observed yet */
+                link_pool[pool_hwm+2] = '\0';  /* NUL-terminate so the string is immediately usable */
+                pool_alloc(num_words, 3);       /* register the 3-byte slot and advance HWM past it */
+                f = num_words;                  /* this new word is now the transition target (f) */
             }
         }
 
-        /* select link buffer and capacity based on whether we are at the
-           start token (old==0) or a regular word */
+        /* update link string for 'old' — uniform path for all words including the start token */
         {
-            char *wlinks    = (old == 0) ? start_word_links : words[old].links;
-            int   wlinks_sz = (old == 0) ? START_LINKS_STR  : MAX_LINKS_STR;
-            int   wpairs    = (old == 0) ? START_LINK_PAIRS  : MAX_LINK_PAIRS;
-
-            /* no existing links — write the first transition directly */
-            if (!wlinks[0]) {
-                snprintf(wlinks, wlinks_sz, "1|%d(1)", f);
-                old = f;
-                continue;
-            }
+            char *wlinks = &link_pool[link_off[old]]; /* point directly at 'old' word's link string in the shared pool */
+            int max_pairs = (old == 0) ? START_LINK_PAIRS : MAX_LINK_PAIRS; /* start token gets larger cap */
+            int n = 0;
 
             /* parse existing link string into ids[]/cnts[] arrays */
-            int n = 0;
-            strncpy(link_parse_buf, wlinks, wlinks_sz - 1);
-            link_parse_buf[wlinks_sz - 1] = 0;
+            strncpy(link_parse_buf, wlinks, 255);  /* work on a copy — parsing will temporarily modify the string */
+            link_parse_buf[255] = 0;               /* guarantee NUL termination regardless of actual link string length */
 
-            char *p = strchr(link_parse_buf, '|');
+            char *p = strchr(link_parse_buf, '|'); /* locate the '|' that separates the total from the pair list */
             if (!p) {
                 /* malformed — reset to a single transition */
-                snprintf(wlinks, wlinks_sz, "1|%d(1)", f);
+                snprintf(link_rebuild_buf, 256, "1|%d(1)", f); /* build a clean single-pair string from scratch */
+                pool_commit(old, link_rebuild_buf);             /* write it back, growing the pool slot if needed */
                 old = f;
                 continue;
             }
-            p++;
+            p++;   /* step past '|' to the first id(cnt) pair */
 
-            while (*p && n < wpairs) {
-                char *lp = strchr(p, '(');
-                char *rp = strchr(p, ')');
+            while (*p && n < max_pairs) { /* parse each id(cnt) pair; stop at the cap or end of string */
+                char *lp = strchr(p, '(');     /* find the opening parenthesis for this pair */
+                char *rp = strchr(p, ')');     /* find the closing parenthesis */
 
-                if (!lp || !rp || rp < lp)
+                if (!lp || !rp || rp < lp)    /* malformed pair structure — abandon parsing here */
                     break;
 
-                *lp = 0;
-                ids[n] = atoi(p);
-                *lp = '(';
+                *lp = 0;               /* temporarily NUL-terminate the id digits so atoi reads only them */
+                ids[n] = atoi(p);      /* parse the target word index */
+                *lp = '(';             /* restore the '(' so the buffer looks normal if we need it again */
 
-                cnts[n] = atoi(lp + 1);
+                cnts[n] = atoi(lp + 1); /* parse the transition count from inside the parentheses */
 
-                if (ids[n] < 0 || ids[n] > MAX_WORDS)
+                if (ids[n] < 0 || ids[n] > MAX_WORDS) /* reject any index outside the valid dictionary range */
                     break;
 
                 if (cnts[n] < 1)
-                    cnts[n] = 1;
+                    cnts[n] = 1;   /* clamp zero or negative counts to 1 — keeps the total invariant intact */
 
                 n++;
-                p = rp + 1;
+                p = rp + 1;   /* advance past ')' ready for the next pair */
             }
 
             if (n == 0) {
-                /* parse produced no valid pairs — reset */
-                snprintf(wlinks, wlinks_sz, "1|%d(1)", f);
+                /* no valid pairs parsed — either a fresh word whose slot holds "0|", or a corrupt string */
+                snprintf(link_rebuild_buf, 256, "1|%d(1)", f); /* first observed transition from this word */
+                pool_commit(old, link_rebuild_buf);             /* commit — likely grows past the initial 3-byte "0|" slot */
                 old = f;
                 continue;
             }
@@ -673,35 +754,35 @@ void learn_sentence(void)
                 int found = 0;
                 for (int i = 0; i < n; i++) {
                     if (ids[i] == f) {
-                        cnts[i]++;
+                        cnts[i]++;   /* we've seen this transition before — bump its weight */
                         found = 1;
                         break;
                     }
                 }
-                if (!found && n < wpairs) {
-                    ids[n] = f;
-                    cnts[n] = 1;
+                if (!found && n < max_pairs) {
+                    ids[n] = f;    /* brand new transition — append it to the array */
+                    cnts[n] = 1;   /* starts with a weight of 1 */
                     n++;
                 }
+                /* if !found && n == max_pairs: at capacity, new transition is silently dropped */
             }
 
             /* recalculate total as sum of all tracked weights */
             int total = 0;
             for (int i = 0; i < n; i++)
-                total += cnts[i];
+                total += cnts[i];   /* total is always recomputed — never cached — to stay consistent */
 
-            /* rebuild the link string into the global buffer then copy back */
+            /* rebuild the link string and commit to the pool */
             int pos = 0;
-            pos += snprintf(link_rebuild_buf + pos, wlinks_sz - pos, "%d|", total);
-            for (int i = 0; i < n && pos < wlinks_sz - 1; i++) {
-                pos += snprintf(link_rebuild_buf + pos, wlinks_sz - pos, "%d(%d)", ids[i], cnts[i]);
+            pos += snprintf(link_rebuild_buf + pos, 256 - pos, "%d|", total); /* write the total field first */
+            for (int i = 0; i < n && pos < 255; i++) {
+                pos += snprintf(link_rebuild_buf + pos, 256 - pos, "%d(%d)", ids[i], cnts[i]); /* append each pair */
             }
-            link_rebuild_buf[wlinks_sz - 1] = 0;
+            link_rebuild_buf[255] = 0;   /* hard NUL guard in case snprintf filled the buffer right to the edge */
 
-            strncpy(wlinks, link_rebuild_buf, wlinks_sz - 1);
-            wlinks[wlinks_sz - 1] = 0;
+            pool_commit(old, link_rebuild_buf); /* write back: in-place if it fits, append at HWM if the string grew */
         }
-        old = f;
+        old = f;   /* advance the chain — 'old' becomes the current word, ready for the next iteration */
     }
 }
 
@@ -710,7 +791,7 @@ void learn_sentence(void)
    Generates a reply by walking the Markov chain from the start token.
 
    Starting at words[0], the function repeatedly:
-     - Reads the link string for the current word.
+     - Reads the link string for the current word from the shared pool.
      - Selects the next word using weighted random selection across all
        observed transitions (higher counts = higher probability).
      - Appends the current word to the reply buffer.
@@ -719,7 +800,7 @@ void learn_sentence(void)
 
    Output is capitalised, trimmed, and terminated with a full stop.
    The reply buffer is bounded — overflow is caught before it can
-   corrupt memory adjacent to the reply array. <- Big Fix!
+   corrupt memory adjacent to the reply array.
    A safety counter of 100 iterations prevents infinite chain loops.
 */
 
@@ -737,11 +818,12 @@ void generate_reply(void)
     while (safety < 100) {
         safety++;
 
-        /* >= catches END_TOKEN (== MAX_WORDS) as an early exit */
-        if (c >= MAX_WORDS)
+        /* >= catches END_TOKEN (==MAX_WORDS); > num_words catches old files
+           where END_TOKEN was 150 and that ID is now a valid-range index */
+        if (c >= MAX_WORDS || c > num_words)
             break;
 
-        char *cstr = (c == 0) ? start_word_links : words[c].links;
+        char *cstr = &link_pool[link_off[c]]; /* fetch this word's link string directly from the shared pool */
 
         /* no transitions from this word — cannot continue */
         if (!cstr[0])
@@ -788,12 +870,12 @@ void generate_reply(void)
         /* append current word — bounded to prevent reply buffer overflow */
 		{
 			size_t used = strlen(reply);
-			size_t need = strlen(words[c].word) + 1 /* space */ + 1 /* NUL */;
+			size_t need = strlen(word_text[c]) + 1 /* space */ + 1 /* NUL */;
 
 			if (used + need > sizeof(reply))
 				break;
 
-			strcat(reply, words[c].word);
+			strcat(reply, word_text[c]);
 			strcat(reply, " ");
 		}
 
@@ -832,9 +914,7 @@ void generate_reply(void)
 
 /* ----------------- Binary Save / Load ----------------- */
 /*
-   Version 3 binary file format — matches the Hi-Tech C COMMANDS.C pattern
-   for compatibility between the two builds & it WORKS.
-
+   Version 3 binary file format — unchanged from v1.13.
    All multi-byte integers are little-endian (LE). The checksum covers
    only the payload bytes, NOT the 7-byte header.
 
@@ -855,18 +935,9 @@ void generate_reply(void)
    Note (CP/M files): CP/M allocates storage in 128-byte sectors so the
    physical file is always rounded up to the next sector boundary. Any
    bytes after the checksum are OS padding and should be ignored.
-
-   AMOS (Style) ASCII files became too big for limited CP/M Storage
-   and also introdiced - many - combinations of 'file' errors - moved
-   to a binary file solution - Proved function in Hi-Tech 'C'.
 */
 
 /* ------------------- Debug Helpers -------------------- */
-/*
-   dbg_hex_n prints a labelled hex dump of n bytes. It is only compiled
-   into debug builds (-DDEBUG). At runtime, output is gated by debug_mode
-   which is toggled with the #debug command.
-*/
 
 #ifdef DEBUG
 static void dbg_hex_n(const char *tag, const unsigned char *p, unsigned int n)
@@ -883,9 +954,9 @@ static void dbg_hex_n(const char *tag, const unsigned char *p, unsigned int n)
 /* -------------------- I/O Wrappers -------------------- */
 /*
    write_all and read_all wrap fwrite/fread to return a success flag.
-   Using stdio FILE* is a must on CP/M — raw POSIX write() calls failed on
-   writes - assume because the BDOS requires 128-byte aligned transfers?
-   The stdio handles internal buffering better.
+   Using stdio FILE* is required on CP/M — raw POSIX write() calls fail
+   because BDOS requires 128-byte aligned transfers. The stdio layer
+   handles internal buffering and alignment.
 */
 
 static int write_all(FILE *fp, void *buf, unsigned int n)
@@ -898,33 +969,6 @@ static int read_all(FILE *fp, void *buf, unsigned int n)
     return (unsigned int)fread(buf, 1, n, fp) == n;
 }
 
-/* ---------------- Record Sanitisation ----------------- */
-/*
-   Prepares a word/link pair into the io_wrec/io_lrec static buffers
-   ready for writing to disk. Rejects invalid word text and substitutes
-   "0|" for a missing or empty link string so every saved record is valid.
-*/
-
-static void sanitise_record(unsigned char word_out[32], unsigned char links_out[MAX_LINKS_STR],
-                            const char *w, const char *l)
-{
-    /* word: store either a valid word, or leave empty */
-    memset(word_out, 0, 32);
-    if (valid_word(w)) {
-        strncpy((char*)word_out, w, 31);
-        word_out[31] = 0;
-    }
-
-    /* links: store the existing string, or "0|" if absent */
-    memset(links_out, 0, MAX_LINKS_STR);
-    if (l && l[0]) {
-        strncpy((char*)links_out, l, MAX_LINKS_STR - 1);
-        links_out[MAX_LINKS_STR - 1] = 0;
-    } else {
-        strcpy((char*)links_out, "0|");
-    }
-}
-
 /* ---------------- Save Dictionary (v3) ---------------- */
 
 void save_dictionary(const char *fname)
@@ -935,6 +979,8 @@ void save_dictionary(const char *fname)
     int i, j;
     unsigned char wlen_byte;
     unsigned short llen_short;
+    const char *lptr;
+    const char *wptr;
 
     /* Debug: log save start — only active in -DDEBUG builds */
 #ifdef DEBUG
@@ -962,32 +1008,48 @@ void save_dictionary(const char *fname)
     /* checksum begins AFTER the header */
     checksum_calc = 0;
 
-    /* entry 0: start token — no word text; links come from start_word_links */
+    /* entry 0: start token — wlen=0, links from pool slot 0 */
     {
-        const char *sl = start_word_links[0] ? start_word_links : (char*)"0|";
-        wlen_byte  = 0;
-        llen_short = (unsigned short)strlen(sl);
-        if (llen_short > (unsigned short)(START_LINKS_STR - 1))
-            llen_short = (unsigned short)(START_LINKS_STR - 1);
+        lptr = &link_pool[link_off[0]];
+        if (!lptr[0]) lptr = "0|";
+        llen_short = (unsigned short)strlen(lptr);
+        if (llen_short > 255) llen_short = 255;
 
+        wlen_byte = 0;
         fwrite(&wlen_byte, 1, 1, fp);
         checksum_calc += wlen_byte;
 
         fwrite(&llen_short, sizeof(unsigned short), 1, fp);
-        checksum_calc += llen_short & 0xFF;
-        checksum_calc += (llen_short >> 8) & 0xFF;
-        for (j = 0; j < (int)llen_short; j++) checksum_calc += (unsigned char)sl[j];
-        if (llen_short) fwrite(sl, llen_short, 1, fp);
+        checksum_calc += (unsigned char)(llen_short & 0xFF);
+        checksum_calc += (unsigned char)((llen_short >> 8) & 0xFF);
+        for (j = 0; j < (int)llen_short; j++) checksum_calc += (unsigned char)lptr[j];
+        if (llen_short) fwrite(lptr, llen_short, 1, fp);
     }
 
     /* entries 1..num_words: real dictionary words */
     for (i = 1; i <= num_words; i++) {
-        sanitise_record(io_wrec, io_lrec, words[i].word,
-                       words[i].links[0] ? words[i].links : (char*)"0|");
-        wlen_byte  = (unsigned char)strlen((char*)io_wrec);
+        wptr = word_text[i];
+        lptr = &link_pool[link_off[i]];
+
+        /* word text */
+        memset(io_wrec, 0, 32);
+        if (valid_word(wptr)) {
+            strncpy((char*)io_wrec, wptr, 31);
+            io_wrec[31] = 0;
+        }
+        wlen_byte = (unsigned char)strlen((char*)io_wrec);
         if (wlen_byte > 31) wlen_byte = 31;
+
+        /* link string */
+        memset(io_lrec, 0, 256);
+        if (lptr && lptr[0]) {
+            strncpy((char*)io_lrec, lptr, 255);
+            io_lrec[255] = 0;
+        } else {
+            strcpy((char*)io_lrec, "0|");
+        }
         llen_short = (unsigned short)strlen((char*)io_lrec);
-        if (llen_short > (unsigned short)(MAX_LINKS_STR - 1)) llen_short = (unsigned short)(MAX_LINKS_STR - 1);
+        if (llen_short > 255) llen_short = 255;
 
         fwrite(&wlen_byte, 1, 1, fp);
         checksum_calc += wlen_byte;
@@ -995,8 +1057,8 @@ void save_dictionary(const char *fname)
         if (wlen_byte) fwrite(io_wrec, wlen_byte, 1, fp);
 
         fwrite(&llen_short, sizeof(unsigned short), 1, fp);
-        checksum_calc += llen_short & 0xFF;
-        checksum_calc += (llen_short >> 8) & 0xFF;
+        checksum_calc += (unsigned char)(llen_short & 0xFF);
+        checksum_calc += (unsigned char)((llen_short >> 8) & 0xFF);
         for (j = 0; j < (int)llen_short; j++) checksum_calc += (unsigned char)io_lrec[j];
         if (llen_short) fwrite(io_lrec, llen_short, 1, fp);
     }
@@ -1012,6 +1074,10 @@ void save_dictionary(const char *fname)
     if (debug_mode) printf("[SAVE] done (checksum=%u).\n", (unsigned int)checksum_calc);
 #endif
 }
+
+/* Load error helpers — one copy of each string + fclose pattern */
+static void load_err(FILE *fp) { fclose(fp); printf("Invalid file.\n"); }
+static void load_erp(FILE *fp) { fclose(fp); printf("Pool full.\n"); }
 
 /* ---------------- Load Dictionary (v3) ---------------- */
 
@@ -1035,11 +1101,7 @@ void load_dictionary(const char *fname)
     if (fp == 0) { printf("Cannot load file.\n"); return; }
     fseek(fp, 0L, SEEK_SET);    /* force FCB position to start — CP/M safety */
 
-    if (!read_all(fp, hdr, 7)) {
-        fclose(fp);
-        printf("Invalid file.\n");
-        return;
-    }
+    if (!read_all(fp, hdr, 7)) { load_err(fp); return; }
 
     /* Debug: dump header bytes */
 #ifdef DEBUG
@@ -1047,18 +1109,15 @@ void load_dictionary(const char *fname)
 #endif
 
     if (hdr[0]!='N' || hdr[1]!='I' || hdr[2]!='A' || hdr[3]!='L') {
-        fclose(fp);
-        /* Debug: report bad magic */
 #ifdef DEBUG
         if (debug_mode) printf("[LOAD] bad magic\n");
 #endif
-        printf("Invalid file.\n");
-        return;
+        load_err(fp); return;
     }
 
     ver    = (unsigned int)hdr[4];
     disk_n = (unsigned int)hdr[5] | ((unsigned int)hdr[6] << 8);
-    if (disk_n > (unsigned int)MAX_WORDS) disk_n = (unsigned int)MAX_WORDS;
+    if (disk_n > (unsigned int)(MAX_WORDS - 1)) disk_n = (unsigned int)(MAX_WORDS - 1);
 
     /* Debug: log parsed header fields */
 #ifdef DEBUG
@@ -1071,86 +1130,122 @@ void load_dictionary(const char *fname)
 #ifdef DEBUG
         if (debug_mode) printf("[LOAD] unsupported version %u\n", ver);
 #endif
-        printf("Wrong file version.\n");
+        printf("Wrong version.\n");
         return;
     }
 
     /* reset dictionary before loading */
-    num_words = 0;
-    strcpy(words[0].word, " ");
-    words[0].links[0] = 0;
+    init_dict();
 
     /* checksum begins AFTER the header */
     checksum_calc = 0;
 
-    /* entry 0: start token — word text is discarded, links go to start_word_links */
-    if (fread(&wlen_byte, 1, 1, fp) != 1) { fclose(fp); printf("Invalid file.\n"); return; }
+    /* entry 0: start token — word text ignored; links go to pool slot 0 */
+    if (fread(&wlen_byte, 1, 1, fp) != 1) { load_err(fp); return; }
     checksum_calc += wlen_byte;
-    if (wlen_byte > 31) { fclose(fp); printf("Invalid file.\n"); return; }
+    if (wlen_byte > 31) { load_err(fp); return; }
     if (wlen_byte) {
         memset(io_wrec, 0, 32);
-        if (!read_all(fp, io_wrec, wlen_byte)) { fclose(fp); printf("Invalid file.\n"); return; }
+        if (!read_all(fp, io_wrec, wlen_byte)) { load_err(fp); return; }
         for (j = 0; j < (int)wlen_byte; j++) checksum_calc += (unsigned char)io_wrec[j];
     }
 
-    if (fread(&llen_short, sizeof(unsigned short), 1, fp) != 1) { fclose(fp); printf("Invalid file.\n"); return; }
-    checksum_calc += llen_short & 0xFF;
-    checksum_calc += (llen_short >> 8) & 0xFF;
-    if (llen_short > (unsigned short)(START_LINKS_STR - 1)) llen_short = (unsigned short)(START_LINKS_STR - 1);
-    memset(start_word_links, 0, START_LINKS_STR);
-    if (llen_short) {
-        if (!read_all(fp, start_word_links, llen_short)) { fclose(fp); printf("Invalid file.\n"); return; }
-        for (j = 0; j < (int)llen_short; j++) checksum_calc += (unsigned char)start_word_links[j];
+    if (fread(&llen_short, sizeof(unsigned short), 1, fp) != 1) { load_err(fp); return; }
+    checksum_calc += (unsigned char)(llen_short & 0xFF);
+    checksum_calc += (unsigned char)((llen_short >> 8) & 0xFF);
+    if (llen_short > 255) llen_short = 255;
+
+    if (llen_short > 0) {
+        unsigned int need = (unsigned int)llen_short + 1; /* bytes required: link string plus NUL terminator */
+        /* fit in the slot from init_dict if possible, else append at HWM */
+        if (need <= link_len[0]) {
+            /* start token's existing 3-byte "0|" slot is large enough — read directly into it */
+            if (!read_all(fp, &link_pool[link_off[0]], llen_short)) { load_err(fp); return; }
+            link_pool[link_off[0] + llen_short] = '\0'; /* NUL-terminate after the bytes we just read */
+        } else {
+            /* saved start token links are longer than 3 bytes — grow by appending a new slot at HWM */
+            if (pool_hwm + need > (unsigned int)LINK_POOL) { load_erp(fp); return; }
+            link_off[0] = pool_hwm;   /* redirect entry 0 to the new, larger slot */
+            link_len[0] = need;       /* update its reserved size */
+            if (!read_all(fp, &link_pool[pool_hwm], llen_short)) { load_err(fp); return; }
+            link_pool[pool_hwm + llen_short] = '\0'; /* NUL-terminate the newly read data */
+            pool_hwm += need;         /* advance HWM past the new slot so future allocations don't overlap */
+        }
+        for (j = 0; j < (int)llen_short; j++) checksum_calc += (unsigned char)link_pool[link_off[0] + j];
     }
-    start_word_links[llen_short] = 0;
-    if (!start_word_links[0]) strcpy(start_word_links, "0|");
+    /* if llen_short == 0 the "0|" from init_dict stays — no action needed */
+
+    if (!link_pool[link_off[0]]) {
+        /* if the slot ended up empty for any reason, restore a valid "0|" string */
+        link_pool[link_off[0]]   = '0';
+        link_pool[link_off[0]+1] = '|';
+        link_pool[link_off[0]+2] = '\0';
+        link_len[0] = 3;
+    }
 
     /* entries 1..disk_n: real dictionary words */
     for (i = 1; i <= (int)disk_n; i++) {
-        if (fread(&wlen_byte, 1, 1, fp) != 1) { fclose(fp); printf("Invalid file.\n"); return; }
+        if (fread(&wlen_byte, 1, 1, fp) != 1) { load_err(fp); return; }
         checksum_calc += wlen_byte;
-        if (wlen_byte > 31) { fclose(fp); printf("Invalid file.\n"); return; }
+        if (wlen_byte > 31) { load_err(fp); return; }
         memset(io_wrec, 0, 32);
         if (wlen_byte) {
-            if (!read_all(fp, io_wrec, wlen_byte)) { fclose(fp); printf("Invalid file.\n"); return; }
+            if (!read_all(fp, io_wrec, wlen_byte)) { load_err(fp); return; }
             for (j = 0; j < (int)wlen_byte; j++) checksum_calc += (unsigned char)io_wrec[j];
         }
         io_wrec[31] = 0;
 
-        if (fread(&llen_short, sizeof(unsigned short), 1, fp) != 1) { fclose(fp); printf("Invalid file.\n"); return; }
-        checksum_calc += llen_short & 0xFF;
-        checksum_calc += (llen_short >> 8) & 0xFF;
-        if (llen_short > (unsigned short)(MAX_LINKS_STR - 1)) llen_short = (unsigned short)(MAX_LINKS_STR - 1);
-        memset(io_lrec, 0, MAX_LINKS_STR);
+        if (fread(&llen_short, sizeof(unsigned short), 1, fp) != 1) { load_err(fp); return; }
+        checksum_calc += (unsigned char)(llen_short & 0xFF);
+        checksum_calc += (unsigned char)((llen_short >> 8) & 0xFF);
+        if (llen_short > 255) llen_short = 255;
+        memset(io_lrec, 0, 256);
         if (llen_short) {
-            if (!read_all(fp, io_lrec, llen_short)) { fclose(fp); printf("Invalid file.\n"); return; }
+            if (!read_all(fp, io_lrec, llen_short)) { load_err(fp); return; }
             for (j = 0; j < (int)llen_short; j++) checksum_calc += (unsigned char)io_lrec[j];
         }
-        io_lrec[MAX_LINKS_STR - 1] = 0;
+        io_lrec[255] = 0;
 
-        strncpy(words[i].word, (char*)io_wrec, 31); words[i].word[31] = 0;
-        strncpy(words[i].links, (char*)io_lrec, MAX_LINKS_STR - 1); words[i].links[MAX_LINKS_STR - 1] = 0;
-        if (!valid_word(words[i].word)) words[i].word[0] = 0;
-        if (!words[i].links[0]) strcpy(words[i].links, "0|");
+        strncpy(word_text[i], (char*)io_wrec, MAX_WORD_LEN); /* copy the word text into the dictionary slot */
+        word_text[i][MAX_WORD_LEN] = 0;                      /* guarantee NUL termination at the boundary */
+        if (!valid_word(word_text[i])) word_text[i][0] = 0;  /* blank out any entry that fails the validity check */
+
+        /* allocate pool slot and store link string */
+        {
+            unsigned int need = llen_short ? (unsigned int)llen_short + 1 : 3; /* NUL-terminated string, or bare "0|" */
+            if (!pool_alloc(i, need)) { load_erp(fp); return; } /* reserve space at HWM */
+            if (llen_short) {
+                memcpy(&link_pool[link_off[i]], io_lrec, llen_short); /* copy link bytes straight into the new slot */
+                link_pool[link_off[i] + llen_short] = '\0';            /* NUL-terminate the stored link string */
+            } else {
+                link_pool[link_off[i]]   = '0';
+                link_pool[link_off[i]+1] = '|';
+                link_pool[link_off[i]+2] = '\0';
+            }
+        }
 
         /* reject structurally invalid link strings on load */
         {
             int t=0, s2=0, p=0;
-            if (!validate_links(words[i].links, &t, &s2, &p))
-                strcpy(words[i].links, "0|");
+            if (!validate_links(&link_pool[link_off[i]], &t, &s2, &p)) {
+                link_pool[link_off[i]]   = '0';
+                link_pool[link_off[i]+1] = '|';
+                link_pool[link_off[i]+2] = '\0';
+                link_len[i] = 3;
+            }
         }
 
         /* Debug: spot-check first and last records */
 #ifdef DEBUG
         if (debug_mode && (i == 1 || i == (int)disk_n))
-            printf("[LOAD] record %d word='%s'\n", i, words[i].word);
+            printf("[LOAD] record %d word='%s'\n", i, word_text[i]);
 #endif
     }
 
     /* read and verify the trailing checksum */
     if (fread(&checksum_saved, sizeof(unsigned short), 1, fp) != 1) {
         fclose(fp);
-        printf("No checksum found.\n");
+        printf("No checksum.\n");
         return;
     }
 
@@ -1171,6 +1266,25 @@ void load_dictionary(const char *fname)
 #endif
 }
 
+/* -------------------- Pager --------------------------- */
+/*
+   Increments *ln each call. When it reaches PAGE_LINES, prints a prompt
+   and waits for a keypress. Returns 1 to continue listing, 0 if the
+   user pressed q/Q to quit.
+*/
+#define PAGE_LINES 22
+static int page_pause(int *ln)
+{
+    int c;
+    if (++(*ln) < PAGE_LINES) return 1;
+    *ln = 0;
+    printf("-- any key / q=quit --");
+    fflush(stdout);
+    c = getchar();
+    printf("\n");
+    return (c != 'q' && c != 'Q');
+}
+
 /* ------------------ Command Handler ------------------- */
 /*
    Handles all commands that begin with '#'. Commands are detected before
@@ -1178,13 +1292,11 @@ void load_dictionary(const char *fname)
 
    Supported commands:
      #fresh        — clears the dictionary and resets all state
-     #list         — prints all dictionary entries (compact)
-     #listd        — prints dictionary with link validation (diagnostic;
-                     not shown in #help but always available)
+     #list         — prints all dictionary entries with link validation
      #save [file]  — saves the dictionary to disk in v3 binary format;
-                     prompts for a filename if none given (default NIALL.DAT)
+                     prompts for a filename if none given (NIALL.DAT)
      #load [file]  — loads a v3 binary dictionary from disk;
-                     prompts for a filename if none given (default NIALL.DAT)
+                     prompts for a filename if none given (NIALL.DAT)
      #help         — lists the main commands
      #quit         — exits the program
      #debug        — toggles verbose save/load trace output;
@@ -1194,59 +1306,31 @@ void load_dictionary(const char *fname)
 void handle_command(char *cmd)
 {
 	if (!strcmp(cmd, "#fresh")) {
-		num_words = 0;
 		dict_full_warned = 0;
-
-		/* reset start token to initial state */
-		strcpy(words[0].word, " ");
-		words[0].links[0] = 0;
-		start_word_links[0] = 0;
-
+		init_dict();
 		printf("Dictionary cleared.\n");
 	}
 	else if (!strcmp(cmd, "#list")) {
+		int ln = 0;
 		for (int i = 0; i <= num_words; i++) {
-			const char *l = (i == 0) ? start_word_links : words[i].links;
-			printf("%d %s %s\n", i,
-				   words[i].word[0] ? (const char*)words[i].word : " ",
-				   l[0] ? l : "0|");
-		}
-	}
-	/* -------------- Diagnostic List (#listd) -------------- */
-	/*
-	   Extended version of #list that also validates each link string and
-	   reports OK or BAD alongside the pair count. Use this after training
-	   or loading to confirm no entries are malformed. Not shown in #help
-	   to keep the help output short; the command is always available.
-	*/
-	else if (!strcmp(cmd, "#listd")) {
-		for (int i = 0; i <= num_words; i++) {
-			const char *w = words[i].word[0] ? (const char*)words[i].word : " ";
-			const char *wl = (i == 0) ? start_word_links : words[i].links;
-			const char *l = wl[0] ? wl : "0|";
-
+			char *l = &link_pool[link_off[i]];
+			char *w = word_text[i][0] ? word_text[i] : (char*)" ";
 			int total = 0, sum = 0, pairs = 0;
+			if (!l[0]) l = (char*)"0|";
 			int ok = validate_links(l, &total, &sum, &pairs);
-
-			if (ok)
-				printf("%d %s %s  [OK pairs=%d]\n", i, w, l, pairs);
-			else
-				printf("%d %s %s  [BAD]\n", i, w, l);
+			if (ok) printf("%d %s %s  [OK pairs=%d]\n", i, w, l, pairs);
+			else    printf("%d %s %s  [BAD]\n", i, w, l);
+			if (!page_pause(&ln)) break;
 		}
 	}
 	else if (!strcmp(cmd, "#help")) {
-        printf("Commands:\n");
-        printf("  #fresh  - Clear dictionary\n");
-        printf("  #list   - List dictionary\n");
-        printf("  #save   - Save dictionary to disk\n");
-        printf("  #load   - Load dictionary from disk\n");
-        printf("  #quit   - Exit\n");
+        puts("Commands:\n  #fresh  - Clear dictionary\n  #list   - List dictionary\n  #save   - Save dictionary to disk\n  #load   - Load dictionary from disk\n  #quit   - Exit");
     }
     else if (!strncmp(cmd, "#save", 5)) {
         char fname[64] = "";
 
         if (sscanf(cmd + 5, "%s", fname) != 1) {
-            printf("Filename (default NIALL.DAT): ");
+            printf("Filename (NIALL.DAT): ");
             fflush(stdout);
             fgets(fname, 64, stdin);
             fname[strcspn(fname, "\r\n")] = 0;
@@ -1261,7 +1345,7 @@ void handle_command(char *cmd)
         char fname[64] = "";
 
         if (sscanf(cmd + 5, "%s", fname) != 1) {
-            printf("Filename (default NIALL.DAT): ");
+            printf("Filename (NIALL.DAT): ");
             fflush(stdout);
             fgets(fname, 64, stdin);
             fname[strcspn(fname, "\r\n")] = 0;

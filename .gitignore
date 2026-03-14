@@ -18,12 +18,15 @@ zcc_proj.lst
 # CP/M executables (compiled output)
 NIALL
 NIALLCHK
+NIVAL
+NIFIX
 
 # Local-only folders
 history/
 docs/
 data/
 Builds/
+dev/
 LOGS/
 
 # IDE and dev tool config
