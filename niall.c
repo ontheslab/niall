@@ -338,7 +338,7 @@ static void nabu_getline(char *buf, int maxlen)
 #endif /* __NABU__ */
 
 #ifndef NIALL_VERSION
-#define NIALL_VERSION       "1.30"
+#define NIALL_VERSION       "1.31"
 #endif
 #ifdef __NABU__
 #define NIALL_STORAGE       "IA"
