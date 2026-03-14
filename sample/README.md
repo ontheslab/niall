@@ -1,48 +1,55 @@
 # NIALL Sample Dictionary Files
 
-Sample save files for **NIALL v1.15**. All files are v4 binary format and require NIALL v1.15 or later. Use `NIALLCHK` to verify any file before loading.
+Sample save files for NIALL v1.15+. Use `NIALLCHK` to verify any file before loading on CP/M, or `niallconv.py inspect` on PC.
 
-## Files
+## Root files
 
-| File        | Description                                                                 |
-|-------------|-----------------------------------------------------------------------------|
-| `NIALL.DAT` | Basic starter — 8 words, a single taught sentence                           |
-| `NIALL2.DAT`| More words added — a small but functional dictionary                        |
-| `NIALL3.DAT`| Extended chat about the NABU, TRS-80 and computers from the 80s and 90s — a good dictionary to start with |
+| File          | Format          | Words | Description                                                                 |
+|---------------|-----------------|-------|-----------------------------------------------------------------------------|
+| `NIALL.DAT`   | v4 binary (CP/M)|     8 | Basic starter — a single taught sentence                                    |
+| `NIALL2.DAT`  | v4 binary (CP/M)|   145 | Small but functional dictionary                                             |
+| `NIALL3.DAT`  | v4 binary (CP/M)|   299 | Chat about NABU, TRS-80 and 80s/90s computers — good starting point        |
+| `RETRO.DAT`   | v4 binary (CP/M)|   299 | Retro computing themed dictionary (CP/M, v4)                                |
+| `RETROV5.DAT` | v5 binary (NABU)| 1,215 | Retro computing themed dictionary (NABU native, v5) — load directly on NABU|
 
-## File Format
+## BBS_DAT_FILES/
 
-All files are **v4 binary** (NIALL v1.15+). Not compatible with v1.14 or earlier.
+Dictionaries converted from AMOS ASCII BBS files to v4 binary via `NIALLASC`.
 
-To verify a file: `NIALLCHK filename`
-To load into NIALL: `#LOAD filename`
+| File          | Format          | Words | Description              |
+|---------------|-----------------|-------|--------------------------|
+| `DISCO1.DAT`  | v4 binary (CP/M)|   798 | Discovery BBS dictionary |
+| `NARNIA1.DAT` | v4 binary (CP/M)|   467 | Narnia BBS dictionary #1 |
+| `NARNIA2.DAT` | v4 binary (CP/M)|   724 | Narnia BBS dictionary #2 |
 
-## Example — NIALL.DAT
+## MASTER_BBS_BACKUPS/
 
+Original AMOS ASCII source files from the BBS archives.
+
+| File                        | Format     | Words | Description                    |
+|-----------------------------|------------|-------|--------------------------------|
+| `NIALL-DISCOVERY-BBS-1.DAT` | AMOS ASCII |   803 | Discovery BBS — original AMOS  |
+| `NIALL-NARNIA-BBS-1.DAT`    | AMOS ASCII |   469 | Narnia BBS #1 — original AMOS  |
+| `NIALL-NARNIA-BBS-2.DAT`    | AMOS ASCII |   725 | Narnia BBS #2 — original AMOS  |
+
+## File Format Notes
+
+| Format          | Platform      | Requires             | Max words |
+|-----------------|---------------|----------------------|-----------|
+| v4 binary (CP/M)| CP/M          | NIALL.COM v1.15+     | 999       |
+| v5 binary (NABU)| NABU native   | NIALLN.nabu v1.30+   | 1,999     |
+| AMOS ASCII      | PC/conversion | `niallconv.py` to convert | —    |
+
+**On CP/M:** `#LOAD filename` — v4 only. Verify with `NIALLCHK filename`.
+
+**On NABU:** `#load filename` — v5 only (RETROV5.DAT). Verify with `NIALLCHK`.
+
+**On PC (Python):** `#load filename` in `niall.py` accepts all formats automatically. Use `niallconv.py` to convert between formats.
+
+To convert AMOS ASCII to v4 or v5:
 ```
-NIALL Binary File Checker
-File   : NIALL.DAT
-Version: 4
-Words  : 8
-
-Idx  Word             Total Pairs  Status
----- ---------------- ----- -----  ------
-   0 (start)              2     2  OK
-   1 my                   1     1  OK
-   2 name                 1     1  OK
-   3 is                   1     1  OK
-   4 niall                1     1  OK
-   5 how                  1     1  OK
-   6 are                  1     1  OK
-   7 you                  1     1  OK
-   8 today                1     1  OK
-
-Checksum : OK (0x0DAA)
-Links    : all valid
-Pairs    : 10 total, 1..2 per word
+python niallconv.py to-bin  NIALL-NARNIA-BBS-1.DAT NARNIA1.DAT    # CP/M v4
+python niallconv.py to-nabu NIALL-NARNIA-BBS-1.DAT NARNIA1V5.DAT  # NABU v5
 ```
 
-## Notes
-
-- BBS dictionary files (converted from AMOS ASCII format via `NIALLASC`) will be added here.
-- For v3 files (NIALL v1.14 or earlier), use `NIALLCON old.dat new.dat` to upgrade before loading.
+For v3 files (NIALL.COM v1.14 or earlier), use `NIALLCON old.dat new.dat` on CP/M to upgrade to v4 first.
