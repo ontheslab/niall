@@ -10,6 +10,8 @@ echo  NIALL Build Script
 echo ****************************************************************************
 
 if /I "%1"=="debug" goto build_debug
+if /I "%1"=="nabu"   goto build_nabu
+if /I "%1"=="nabu80" goto build_nabu80
 
 :build_release
 echo  Building NIALL (release)...
@@ -18,13 +20,39 @@ if errorlevel 1 goto fail
 echo  Building NIALLCHK (release)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
 if errorlevel 1 goto fail
-echo  Building NIALLCONV (release)...
-zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallconv.c -o NIALLCONV
+echo  Building NIALLCON (release)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallcon.c -o NIALLCON
 if errorlevel 1 goto fail
 echo  Building NIALLASC (release)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallasc.c -o NIALLASC
 if errorlevel 1 goto fail
 goto sizes
+
+:build_nabu
+echo  Building NIALLN (NABU native, 40-col TMS9918 — default)...
+zcc +nabu -vn -create-app -compiler=sdcc --opt-code-size niall.c -o NIALLN
+if errorlevel 1 goto fail
+echo.
+echo  Output:
+for %%F in (NIALLN.nabu) do echo    %%F  %%~zF bytes
+echo.
+echo ****************************************************************************
+echo  Build OK. Usage: build.bat [debug^|nabu^|nabu80]
+echo ****************************************************************************
+exit /b 0
+
+:build_nabu80
+echo  Building NIALLN (NABU native, 80-col F18A)...
+zcc +nabu -vn -create-app -compiler=sdcc --opt-code-size -DVDP_80COL niall.c -o NIALLN
+if errorlevel 1 goto fail
+echo.
+echo  Output:
+for %%F in (NIALLN.nabu) do echo    %%F  %%~zF bytes
+echo.
+echo ****************************************************************************
+echo  Build OK. Usage: build.bat [debug^|nabu^|nabu80]
+echo ****************************************************************************
+exit /b 0
 
 :build_debug
 echo  Building NIALL (debug)...
@@ -33,8 +61,8 @@ if errorlevel 1 goto fail
 echo  Building NIALLCHK (debug)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallchk.c -o NIALLCHK
 if errorlevel 1 goto fail
-echo  Building NIALLCONV (debug)...
-zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallconv.c -o NIALLCONV
+echo  Building NIALLCON (debug)...
+zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallcon.c -o NIALLCON
 if errorlevel 1 goto fail
 echo  Building NIALLASC (debug)...
 zcc +cpm -vn -create-app -compiler=sdcc --opt-code-size niallasc.c -o NIALLASC
@@ -43,12 +71,12 @@ if errorlevel 1 goto fail
 :sizes
 echo.
 echo  Output sizes:
-for %%F in (NIALL.COM NIALLCHK.COM NIALLCONV.COM NIALLASC.COM) do (
+for %%F in (NIALL.COM NIALLCHK.COM NIALLCON.COM NIALLASC.COM) do (
     echo    %%F  %%~zF bytes
 )
 echo.
 echo ****************************************************************************
-echo  Build OK. Usage: build.bat [debug]
+echo  Build OK. Usage: build.bat [debug^|nabu]
 echo ****************************************************************************
 exit /b 0
 

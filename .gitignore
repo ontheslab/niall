@@ -6,6 +6,7 @@
 # z88dk build artifacts
 *.com
 *.bin
+*.nabu
 *.map
 *.lis
 *.o
@@ -21,7 +22,9 @@ NIALLCHK
 NIVAL
 NIFIX
 NIALLASC
-NIALLCONV
+NIALLCON
+NIALLN
+NIALLN80
 
 # Local-only folders
 history/
@@ -35,3 +38,16 @@ LOGS/
 RELEASE_*.md
 
 xfer_n.bat
+
+# Depreciated code
+nival.c
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+python/*.json
+
+# Sample subfolders (local data only)
+sample/BBS_DAT_FILES/
+sample/MASTER_BBS_BACKUPS/
