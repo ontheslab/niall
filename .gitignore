@@ -25,6 +25,7 @@ NIALLASC
 NIALLCON
 NIALLN
 NIALLN80
+NIALLLT
 
 # Local-only folders
 history/
@@ -38,6 +39,7 @@ LOGS/
 RELEASE_*.md
 
 xfer_n.bat
+build_utils.bat
 
 # Depreciated code
 nival.c

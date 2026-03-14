@@ -7,6 +7,8 @@ Faithful to the original algorithm — weighted word transition learning and rep
 
 Python 3.6 or later. No packages required — stdlib only.
 
+`niall.py` optionally uses `niallconv.py` (included) to load any NIALL binary or AMOS ASCII file directly with `#load`. Without it, `#load` accepts JSON only.
+
 ## Usage
 
 ```
@@ -17,15 +19,17 @@ Type sentences to teach NIALL. It learns word transitions and generates replies 
 
 ## Commands
 
-| Command          | Description                              |
-|------------------|------------------------------------------|
-| `#fresh`         | Clear the dictionary                     |
-| `#list`          | Show dictionary with totals and pairs    |
-| `#save [file]`   | Save to JSON (default: `niall.json`)     |
-| `#load [file]`   | Load from JSON (default: `niall.json`)   |
-| `#help`          | Show command list                        |
-| `#quit`          | Exit                                     |
-| (any text)       | Teach NIALL and get a reply              |
+| Command               | Description                                          |
+|-----------------------|------------------------------------------------------|
+| `#fresh`              | Clear the dictionary                                 |
+| `#list`               | Show dictionary with totals and pairs                |
+| `#save [file]`        | Save to JSON (default: `niall.json`)                 |
+| `#load [file]`        | Load any NIALL format (default: `niall.json`)        |
+| `#export [file]`      | Export v5 NABU binary (default: `NIALL.DAT`)         |
+| `#exportcpm [file]`   | Export v4 CP/M binary (default: `NIALL.DAT`)         |
+| `#help`               | Show command list                                    |
+| `#quit`               | Exit                                                 |
+| (any text)            | Teach NIALL and get a reply                          |
 
 ## Save Format
 
@@ -67,6 +71,31 @@ The idea is similar — both are text files you can open and read — but AMOS s
 
 To edit a dictionary interactively, use `nialled.py` (see below). To convert between formats, use `niallconv.py` (see below).
 
+## Binary Export and Import
+
+`#export` and `#exportcpm` write binary dictionaries that can be loaded directly into the C builds of NIALL.
+
+`#load` accepts any NIALL format — JSON, v4 CP/M binary, v5 NABU binary, v3 legacy binary, or AMOS ASCII — detected automatically. This requires `niallconv.py` to be in the same directory (it is, by default). If `niallconv.py` is missing, `#load` falls back to JSON only.
+
+| Command        | Format | Platform | Max words | File version |
+|----------------|--------|----------|-----------|--------------|
+| `#export`      | v5     | NABU native (NIALLN.nabu v1.30+) | 1,999 | 5 |
+| `#exportcpm`   | v4     | CP/M (NIALL.COM v1.15+) | 999 | 4 |
+
+Typical workflow for building a large NABU dictionary on PC:
+
+```
+python niall.py
+USER: #load RETRO.DAT       (load any existing file — v4, v5, AMOS, or JSON)
+USER: [train more sentences]
+USER: #export NIALL.DAT     (write v5 for NABU)
+USER: #exportcpm NIALL.DAT  (write v4 for CP/M)
+```
+
+Copy the exported `NIALL.DAT` to the NABU Internet Adapter file store, then `#load` on the NABU.
+
+---
+
 ## nialled.py — Interactive Dictionary Editor
 
 An interactive REPL for browsing and editing a NIALL dictionary. Loads any NIALL save format via `niallconv.py`.
@@ -101,7 +130,8 @@ nialled*[niall.json | 47w]>
 | `recount` | Validate all counts |
 | `load [file]` | Load any NIALL format, replacing the current dictionary |
 | `save [file]` | Save to JSON |
-| `export [file]` | Write a v4 binary ready for CP/M or NABU |
+| `export [file]` | Export v4 CP/M binary (NIALL.DAT) |
+| `export-nabu [file]` | Export v5 NABU binary (NIALL.DAT) |
 | `help` | Show command list |
 | `quit` | Exit (warns if there are unsaved changes) |
 
@@ -130,9 +160,10 @@ nialled> del hello niall
 nialled> rename niall amos
 nialled> prune 2
 
-# Save back to JSON and export a fresh binary
+# Save to JSON and export binaries for both platforms
 nialled> save niall.json
-nialled> export NIALL.DAT
+nialled> export NIALL.DAT          # v4 for CP/M
+nialled> export-nabu NIALL.DAT    # v5 for NABU
 ```
 
 ### Rescuing orphans
@@ -160,7 +191,7 @@ nialled> chain amiga
 
 # Save
 nialled> save
-nialled> export NIALL.DAT
+nialled> export-nabu NIALL.DAT
 ```
 
 The `chain` command is useful after any edit to verify NIALL can actually walk the
@@ -174,19 +205,23 @@ Converts between all NIALL save formats. Useful for moving a dictionary trained 
 
 ```
 python niallconv.py to-json [input [output.json]]
-python niallconv.py to-bin  [input [output.dat]]
+python niallconv.py to-bin  [input [output.dat]]    # v4 CP/M
+python niallconv.py to-nabu [input [output.dat]]    # v5 NABU
 python niallconv.py inspect [input]
 ```
 
 ### Commands
 
-| Command             | Input            | Output                          |
-|---------------------|------------------|---------------------------------|
-| `to-json`           | any format       | `niall.json` (editable JSON)    |
-| `to-bin`            | any format       | `NIALL.DAT` (v4 binary)         |
-| `inspect`           | any format       | `<name>_clean.json` + `<name>_clean.dat` |
+| Command    | Input      | Output                                                        |
+|------------|------------|---------------------------------------------------------------|
+| `to-json`  | any format | `niall.json` (editable JSON)                                  |
+| `to-bin`   | any format | `NIALL.DAT` (v4 binary, CP/M, max 999 words)                  |
+| `to-nabu`  | any format | `NIALL.DAT` (v5 binary, NABU, max 1999 words)                 |
+| `inspect`  | any format | `<name>_clean.json` + `<name>_clean.dat` + `<name>_clean_nabu.dat` |
 
-`inspect` is the same as running `to-json` and `to-bin` together — handy for a first look at an unknown file.
+`inspect` is handy for a first look at an unknown file — it validates, auto-corrects, and writes clean copies in all three formats at once.
+
+`to-bin` will refuse to convert if the word count exceeds the CP/M limit of 999 — use `to-nabu` instead.
 
 ### Supported input formats
 
@@ -194,7 +229,8 @@ python niallconv.py inspect [input]
 |--------|-------------|
 | AMOS ASCII | Original AMOS BASIC text format (Format A and B) |
 | v3 binary | CP/M NIALL.COM v1.13/v1.14 binary save files |
-| v4 binary | CP/M NIALL.COM v1.15+ and NABU NIALLN.nabu save files |
+| v4 binary | CP/M NIALL.COM v1.15+ binary save files |
+| v5 binary | NABU NIALLN.nabu v1.30+ binary save files |
 | JSON | Python port save files (niall.py) |
 
 The format is detected automatically — no flag needed.
@@ -206,15 +242,19 @@ The format is detected automatically — no flag needed.
 python niallconv.py to-json NIALL.DAT
 
 # Edit niall.json in any text editor, then push it back
-python niallconv.py to-bin niall.json NIALL.DAT
+python niallconv.py to-bin  niall.json NIALL.DAT    # CP/M
+python niallconv.py to-nabu niall.json NIALL.DAT    # NABU
 
-# Inspect an old AMOS file and get clean copies of both formats
+# Convert a CP/M v4 file directly to NABU v5
+python niallconv.py to-nabu NIALL.DAT NIALL_NABU.DAT
+
+# Inspect an old AMOS file and get clean copies of all formats
 python niallconv.py inspect GTAMP.DAT
 ```
 
 ### Auto-corrections
 
-All three commands validate the input and apply fixes automatically, reporting each change to the screen:
+All commands validate the input and apply fixes automatically, reporting each change to the screen:
 
 - Word text stripped to alphanumeric (matching what NIALL.COM learns)
 - Link totals recomputed from pair counts (stored value ignored)
@@ -224,4 +264,4 @@ All three commands validate the input and apply fixes automatically, reporting e
 - AMOS end-of-sentence token (3000) remapped to v4 token (1000)
 - Start-token singleton pairs removed (words seen only once as a sentence opener, common in large AMOS files)
 - Pairs over the per-word limit kept by highest count; excess dropped
-- v3 and v4 checksum mismatches flagged
+- v3, v4, and v5 checksum mismatches flagged
