@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 """
 niallconv.py — NIALL Python Dictionary Converter
-Reads any NIALL save format and produces clean v4 binary and/or JSON output,
+Reads any NIALL save format and produces clean binary and/or JSON output,
 with full validation and auto-correction.
 
 Supported input formats
   AMOS/BBS ASCII  — original AMOS BASIC / BBS text format (Format A and Format B)
   v3 binary   — binary with text link strings (NIALL.COM v1.13/v1.14)
-  v4 binary   — compact binary records (NIALL.COM v1.15+, NIALLN.nabu)
+  v4 binary   — compact binary records (NIALL.COM v1.15+, CP/M)
+  v5 binary   — compact binary records (NIALLN.nabu v1.30+, NABU native)
   JSON        — Python port save format (niall.py)
 
 Usage
-  python niallconv.py to-bin  [input [output.dat]]
-  python niallconv.py to-json [input [output.json]]
-  python niallconv.py inspect [input]
+  python niallconv.py to-bin   [input [output.dat]]   CP/M v4 binary
+  python niallconv.py to-nabu  [input [output.dat]]   NABU v5 binary
+  python niallconv.py to-json  [input [output.json]]
+  python niallconv.py inspect  [input]
 
 Commands
-  to-bin   convert to clean v4 binary (default output: NIALL.DAT)
-  to-json  convert to clean JSON      (default output: niall.json)
+  to-bin   convert to clean v4 binary  (CP/M,  max 999 words, default output: NIALL.DAT)
+  to-nabu  convert to clean v5 binary  (NABU,  max 1999 words, default output: NIALL.DAT)
+  to-json  convert to clean JSON       (default output: niall.json)
   inspect  full analysis + auto-correct, writes both .dat and .json
 
 Auto-corrections reported and applied
@@ -29,7 +32,7 @@ Auto-corrections reported and applied
   AMOS/BBS end-token 3000 remapped to v4 end-token 1000
   Start-token singleton pairs removed (transitions seen only once)
   Pairs over MAX_PAIRS/START_PAIRS: lowest-count transitions dropped
-  v4 checksum verified; mismatch reported
+  v4/v5 checksum verified; mismatch reported
   v3 checksum verified; mismatch reported
 """
 
@@ -47,13 +50,22 @@ import sys
 START          = "__START__"
 END            = "__END__"
 MAGIC          = b"NIAL"
+AMOS_END_TOKEN = 3000             # end-of-sentence sentinel in AMOS/BBS ASCII files
+MAX_WORD_LEN   = 31               # max characters in a dictionary word
+
+# CP/M v4 constants
 BIN_VERSION    = 4
 MAX_WORDS      = 1000
-END_TOKEN      = MAX_WORDS        # 1000 — end-of-sentence sentinel in v4
-AMOS_END_TOKEN = 3000             # end-of-sentence sentinel in AMOS/BBS ASCII files
+END_TOKEN      = 1000             # end-of-sentence sentinel in v4
 START_PAIRS    = 100              # max transitions for start token
 MAX_PAIRS      = 25               # max transitions for regular words
-MAX_WORD_LEN   = 31               # max characters in a dictionary word
+
+# NABU v5 constants
+NABU_BIN_VERSION = 5
+NABU_MAX_WORDS   = 2000
+NABU_END_TOKEN   = 2000           # end-of-sentence sentinel in v5
+NABU_START_PAIRS = 255            # max transitions for start token
+NABU_MAX_PAIRS   = 63             # max transitions for regular words
 
 
 # --------------------------------------------------------------------------
@@ -103,6 +115,8 @@ def detect_format(raw):
         ver = raw[4]
         if ver == 4:
             return 'v4'
+        if ver == 5:
+            return 'v5'
         if ver == 3:
             return 'v3'
         return 'v_unknown'
@@ -227,13 +241,12 @@ def _filter_pairs(pairs, cap, rm_singletons, entry_label, report):
 def _pairs_to_successors(pairs, index_to_word, entry_label, report):
     """
     Resolve numeric pair ids to word names and return a {word: count} dict.
+    index_to_word must already map the file's end token (1000 or 2000) to END.
     Unknown ids are reported and skipped.
     """
     successors = {}
     for wid, cnt in pairs:
-        if wid == END_TOKEN:
-            dst = END
-        elif wid in index_to_word:
+        if wid in index_to_word:
             dst = index_to_word[wid]
         else:
             report.fix(entry_label, f"unknown target id {wid} — skipped")
@@ -295,24 +308,34 @@ def _parse_json(raw):
     return dictionary, report, num_words
 
 
-def _parse_v4(raw):
-    """Parse a v4 binary NIALL save file."""
+def _parse_binary(raw):
+    """Parse a v4 (CP/M) or v5 (NABU) binary NIALL save file."""
     report = Report()
 
     if len(raw) < 7:
-        _die("File too short to be a valid v4 NIALL save file.")
+        _die("File too short to be a valid NIALL binary save file.")
 
-    magic    = raw[0:4]
-    ver      = raw[4]
+    magic     = raw[0:4]
+    ver       = raw[4]
     num_words = struct.unpack_from("<H", raw, 5)[0]
 
     if magic != MAGIC:
         _die_bad_magic(raw)
-    if ver != BIN_VERSION:
-        _die(f"Wrong binary version: got {ver}, expected {BIN_VERSION}.\n"
+    if ver == 4:
+        file_end_token   = END_TOKEN        # 1000
+        file_max_words   = MAX_WORDS        # 1000
+        file_max_pairs   = MAX_PAIRS        # 25
+        file_start_pairs = START_PAIRS      # 100
+    elif ver == 5:
+        file_end_token   = NABU_END_TOKEN   # 2000
+        file_max_words   = NABU_MAX_WORDS   # 2000
+        file_max_pairs   = NABU_MAX_PAIRS   # 63
+        file_start_pairs = NABU_START_PAIRS # 255
+    else:
+        _die(f"Wrong binary version: got {ver}, expected 4 (CP/M) or 5 (NABU).\n"
              f"       Use NIALLCONV.COM on CP/M to upgrade v3 files.")
 
-    num_words = min(num_words, MAX_WORDS - 1)
+    num_words = min(num_words, file_max_words - 1)
 
     pos          = 7
     checksum_acc = 0
@@ -327,7 +350,7 @@ def _parse_v4(raw):
         pos += n
         return chunk
 
-    index_to_word = {0: START, END_TOKEN: END}
+    index_to_word = {0: START, file_end_token: END}
     raw_links     = {}   # index → [(target_id, count), ...]
 
     for i in range(num_words + 1):
@@ -382,8 +405,8 @@ def _parse_v4(raw):
         src = index_to_word.get(i, f"_word{i}")
         pairs = _filter_pairs(
             raw_links.get(i, []),
-            cap          = START_PAIRS if i == 0 else MAX_PAIRS,
-            rm_singletons= False,   # v4 files already filtered on entry
+            cap          = file_start_pairs if i == 0 else file_max_pairs,
+            rm_singletons= False,   # v4/v5 files already filtered on entry
             entry_label  = i,
             report       = report,
         )
@@ -605,8 +628,11 @@ def load_any(path):
     fmt = detect_format(raw)
 
     if fmt == 'v4':
-        fmt_name = "v4 binary"
-        dictionary, report, num_words = _parse_v4(raw)
+        fmt_name = "v4 binary (CP/M)"
+        dictionary, report, num_words = _parse_binary(raw)
+    elif fmt == 'v5':
+        fmt_name = "v5 binary (NABU)"
+        dictionary, report, num_words = _parse_binary(raw)
     elif fmt == 'v3':
         fmt_name = "v3 binary"
         dictionary, report, num_words = _parse_v3(raw)
@@ -619,7 +645,7 @@ def load_any(path):
     elif fmt == 'v_unknown':
         ver = raw[4] if len(raw) > 4 else 0
         _die(f"Unrecognised NIAL binary version {ver}.\n"
-             f"       Supported: v3 (use niallconv.c on CP/M to read) and v4.")
+             f"       Supported: v3 (use niallconv.c on CP/M to read), v4 (CP/M), v5 (NABU).")
     else:
         _die_bad_magic(raw)
 
@@ -637,22 +663,19 @@ def write_json(dictionary, path):
         json.dump({"version": 1, "dictionary": dictionary}, f, indent=2, sort_keys=True)
 
 
-def write_binary(dictionary, path):
-    """
-    Write dictionary to a clean v4 binary NIALL.DAT.
-    Words sorted alphabetically for reproducible output.
-    Pairs capped at MAX_PAIRS/START_PAIRS, keeping most common.
-    """
+def _write_binary_impl(dictionary, path, version, end_token, max_words,
+                       max_pairs, start_pairs):
+    """Shared binary writer for v4 (CP/M) and v5 (NABU) formats."""
     real_words = sorted(w for w in dictionary if w not in (START, END))
-    if len(real_words) > MAX_WORDS - 1:
-        print(f"  Warning: {len(real_words)} words exceeds limit of {MAX_WORDS - 1}. "
-              f"Truncating to first {MAX_WORDS - 1} alphabetically.")
-        real_words = real_words[:MAX_WORDS - 1]
+    if len(real_words) > max_words:
+        print(f"  Warning: {len(real_words)} words exceeds limit of {max_words}. "
+              f"Truncating to first {max_words} alphabetically.")
+        real_words = real_words[:max_words]
 
     num_words   = len(real_words)
     word_to_idx = {w: i for i, w in enumerate(real_words, 1)}
     word_to_idx[START] = 0
-    word_to_idx[END]   = END_TOKEN
+    word_to_idx[END]   = end_token
 
     payload      = bytearray()
     checksum_acc = 0
@@ -682,15 +705,15 @@ def write_binary(dictionary, path):
     for i in range(num_words + 1):
         if i == 0:
             emit(struct.pack("B", 0))
-            emit(make_link_record(dictionary.get(START, {}), START_PAIRS))
+            emit(make_link_record(dictionary.get(START, {}), start_pairs))
         else:
             word = real_words[i - 1]
             wlen = min(len(word), MAX_WORD_LEN)
             emit(struct.pack("B", wlen))
             emit(word[:wlen].encode("ascii", errors="replace"))
-            emit(make_link_record(dictionary.get(word, {}), MAX_PAIRS))
+            emit(make_link_record(dictionary.get(word, {}), max_pairs))
 
-    header = MAGIC + struct.pack("B", BIN_VERSION) + struct.pack("<H", num_words)
+    header = MAGIC + struct.pack("B", version) + struct.pack("<H", num_words)
     footer = struct.pack("<H", checksum_acc)
 
     with open(path, "wb") as f:
@@ -699,6 +722,22 @@ def write_binary(dictionary, path):
         f.write(footer)
 
     return num_words, checksum_acc
+
+
+def write_binary(dictionary, path):
+    """Write dictionary to a clean v4 CP/M binary (max 999 words, 25 pairs)."""
+    return _write_binary_impl(dictionary, path,
+                              version=BIN_VERSION, end_token=END_TOKEN,
+                              max_words=MAX_WORDS - 1,
+                              max_pairs=MAX_PAIRS, start_pairs=START_PAIRS)
+
+
+def write_nabu_binary(dictionary, path):
+    """Write dictionary to a clean v5 NABU binary (max 1999 words, 63 pairs)."""
+    return _write_binary_impl(dictionary, path,
+                              version=NABU_BIN_VERSION, end_token=NABU_END_TOKEN,
+                              max_words=NABU_MAX_WORDS - 1,
+                              max_pairs=NABU_MAX_PAIRS, start_pairs=NABU_START_PAIRS)
 
 
 # --------------------------------------------------------------------------
@@ -732,13 +771,34 @@ def cmd_to_bin(args):
     if not os.path.exists(src):
         _die(f"Input file not found: {src}")
 
-    fmt, dictionary, report, _ = load_any(src)
+    fmt, dictionary, report, real_count = load_any(src)
+    if real_count > MAX_WORDS - 1:
+        _die(f"{real_count} words exceeds CP/M v4 limit of {MAX_WORDS - 1}. "
+             f"Use 'to-nabu' instead.")
     print(f"Input : {src}  ({fmt})")
     _print_separator()
     report.print_all()
     _print_separator()
     num_words, checksum = write_binary(dictionary, dst)
-    print(f"Output: {dst}  ({num_words} words, checksum {checksum:#06x})")
+    print(f"Output: {dst}  (v4 CP/M, {num_words} words, checksum {checksum:#06x})")
+
+
+def cmd_to_nabu(args):
+    src = args[0] if args else "niall.json"
+    dst = args[1] if len(args) > 1 else "NIALL.DAT"
+
+    if not os.path.exists(src):
+        _die(f"Input file not found: {src}")
+
+    fmt, dictionary, report, real_count = load_any(src)
+    if real_count > NABU_MAX_WORDS - 1:
+        _die(f"{real_count} words exceeds NABU v5 limit of {NABU_MAX_WORDS - 1}.")
+    print(f"Input : {src}  ({fmt})")
+    _print_separator()
+    report.print_all()
+    _print_separator()
+    num_words, checksum = write_nabu_binary(dictionary, dst)
+    print(f"Output: {dst}  (v5 NABU, {num_words} words, checksum {checksum:#06x})")
 
 
 def cmd_inspect(args):
@@ -747,9 +807,10 @@ def cmd_inspect(args):
     if not os.path.exists(src):
         _die(f"Input file not found: {src}")
 
-    base   = os.path.splitext(src)[0]
-    dst_bin  = base + "_clean.dat"
-    dst_json = base + "_clean.json"
+    base        = os.path.splitext(src)[0]
+    dst_bin     = base + "_clean.dat"
+    dst_nabu    = base + "_clean_nabu.dat"
+    dst_json    = base + "_clean.json"
 
     fmt, dictionary, report, real_count = load_any(src)
     print(f"Input : {src}  ({fmt})")
@@ -759,11 +820,17 @@ def cmd_inspect(args):
     report.print_all()
     _print_separator()
 
-    num_words, checksum = write_binary(dictionary, dst_bin)
     write_json(dictionary, dst_json)
+    print(f"Clean JSON      : {dst_json}")
 
-    print(f"Clean binary : {dst_bin}  ({num_words} words, checksum {checksum:#06x})")
-    print(f"Clean JSON   : {dst_json}")
+    if real_count <= MAX_WORDS - 1:
+        num_words, checksum = write_binary(dictionary, dst_bin)
+        print(f"Clean v4 (CP/M) : {dst_bin}  ({num_words} words, checksum {checksum:#06x})")
+    else:
+        print(f"Clean v4 (CP/M) : skipped ({real_count} words exceeds limit of {MAX_WORDS - 1})")
+
+    num_words, checksum = write_nabu_binary(dictionary, dst_nabu)
+    print(f"Clean v5 (NABU) : {dst_nabu}  ({num_words} words, checksum {checksum:#06x})")
 
 
 # --------------------------------------------------------------------------
@@ -804,6 +871,8 @@ def main():
         cmd_to_json(rest)
     elif cmd == "to-bin":
         cmd_to_bin(rest)
+    elif cmd == "to-nabu":
+        cmd_to_nabu(rest)
     elif cmd == "inspect":
         cmd_inspect(rest)
     else:
