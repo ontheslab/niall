@@ -13,7 +13,7 @@
 
    Target platforms : CP/M 2.2   — NABU, TRS-80 Model 4P, Kaypro
                       NABU native — homebrew .nabu segment, saves to IA file store
-   Compiler        : z88dk with SDCC backend (Z80, 64 KB address space)
+   Compiler         : z88dk with SDCC backend (Z80, 64 KB address space)
 
    -----------------------------------------------------------------------
    Version 1.31 (current)
@@ -739,15 +739,16 @@ static void link_update(unsigned int old, unsigned int f)
 /* getrnd: read the Z80 R register as an entropy source for seeding srand().
    R increments on every instruction fetch, so its value at startup reflects
    BIOS/init timing and is different on each run.
-   SDCC warning 59 ("must return value") is expected — return value is in HL
-   via inline asm and does not need a C return statement. */
+   Error work around, 0 return - Thanks AGMS. */
 static int getrnd(void)
 {
     __asm
     ld a, r
     ld l, a
     ld h, #0
+    ret
     __endasm;
+      return 0; /* Do-nothing return to avoid a C compiler error (AGMS) */
 }
 
 int main(void)
