@@ -260,6 +260,8 @@
 #ifdef __NABU__
 
 #include <stdarg.h>
+#include <malloc.h>          /* mallinfo() — heap free/total (AGMS) */
+#pragma define CRT_STACK_SIZE=512  /* enable z88dk heap; mallinfo needs _heap (AGMS) */
 #define BIN_TYPE BIN_HOMEBREW
 #define FONT_LM80C
 #include "../NABULIB/NABU-LIB.h"
@@ -1628,6 +1630,12 @@ void handle_command(char *cmd)
         NABU_PRINTF("Words: %d/%d\n", num_words, MAX_WORDS - 1);
         NABU_PRINTF("Text:  %u/%u bytes\n", wtext_hwm, WTEXT_POOL);
         NABU_PRINTF("Cache: %d/%d slots\n", used, IA_CACHE_N);
+        /* Heap free/total — idea and mallinfo() usage by AGMS */
+        {
+            uint16_t total, largest;
+            mallinfo(&total, &largest);
+            NABU_PRINTF("Heap:  %u free (%u largest)\n", total, largest);
+        }
     }
 #endif
     else if (!strcmp(cmd, "#quit")) {
