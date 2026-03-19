@@ -16,7 +16,21 @@
    Compiler         : z88dk with SDCC backend (Z80, 64 KB address space)
 
    -----------------------------------------------------------------------
-   Version 1.31 (current)
+   Version 1.32 (current)
+   - NABU #quit: empty and close IA file handle before exit. Prevents
+     NIA/NNS lockup from a dangling open NIALLPG.DAT handle. NIALL.DAT
+     (from #save) retains all data needed to rebuild the live file.
+   - NABU #mem: heap free/total shown via mallinfo() — idea and code
+     contributed by AGMS (Alex G. M. Smith). Baseline: 1,864 bytes free.
+     Requires CRT_STACK_SIZE=512 pragma to enable z88dk heap allocator.
+   - getrnd() return fix: added unreachable return 0 to suppress SDCC
+     warning 59 ("must return value"). Fix contributed by AGMS.
+     The inline asm ret exits before the C epilogue; return 0 is never
+     reached but keeps the compiler satisfied. 4-byte code cost.
+   - CP/M build unchanged. No save format change.
+   - NIALL.COM 48,148 bytes. NIALLN.nabu 57,773 bytes.
+
+   Version 1.31
    - Word-wrapped replies: print_reply() wraps NIALL output at SCREEN_COLS
      (80 default, 40 for NABU 40-col, override with -DCPM_COLS=32 or =40).
      Continuation lines indent to align with reply text.
@@ -352,7 +366,7 @@ static void nabu_getline(char *buf, int maxlen)
 #endif /* __NABU__ */
 
 #ifndef NIALL_VERSION
-#define NIALL_VERSION       "1.31"
+#define NIALL_VERSION       "1.32"
 #endif
 #ifdef __NABU__
 #define NIALL_STORAGE       "IA"

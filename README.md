@@ -26,7 +26,7 @@ CP/M build produces:
 
 | File           | Size   | Description                          |
 |----------------|--------|--------------------------------------|
-| `NIALL.COM`    | 48,144 | The chatbot                          |
+| `NIALL.COM`    | 48,148 | The chatbot                          |
 | `NIALLCHK.COM` | 14,727 | Save file verifier                   |
 | `NIALLCON.COM` | 12,118 | v3 → v4 save file converter          |
 | `NIALLASC.COM` | 28,044 | AMOS BBS ASCII → v4 importer         |
@@ -35,8 +35,8 @@ NABU builds:
 
 | File           | Size   | Description                          |
 |----------------|--------|--------------------------------------|
-| `NIALLN.nabu`  | 57,460 | NABU native — 40-col TMS9918 (default)|
-| `NIALLN80.nabu`| 57,474 | NABU native — 80-col F18A option     |
+| `NIALLN.nabu`  | 57,773 | NABU native — 40-col TMS9918 (default)|
+| `NIALLN80.nabu`| 57,787 | NABU native — 80-col F18A option     |
 
 Custom CP/M builds (narrow-display — see [Custom Builds release](https://github.com/ontheslab/niall/releases/tag/custom-builds-1.30)):
 
