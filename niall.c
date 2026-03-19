@@ -1640,6 +1640,13 @@ void handle_command(char *cmd)
 #endif
     else if (!strcmp(cmd, "#quit")) {
         NABU_PRINTF("Bye.\n");
+#ifdef __NABU__
+        /* Empty and close the IA live file before exit.
+           Prevents NIA/NNS lockup from a dangling open handle.
+           NIALL.DAT (from #save) has all the data needed to rebuild it. */
+        rn_fileHandleEmptyFile(ia_fh);
+        rn_fileHandleClose(ia_fh);
+#endif
         exit(0);
     }
 }
