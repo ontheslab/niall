@@ -40,6 +40,7 @@ LOGS/
 # Release notes (temporary, used for gh release create then discarded)
 RELEASE_*.md
 
+# Personal scripts (local only — see .git/info/exclude)
 xfer.bat
 xfer_n.bat
 build_utils.bat
