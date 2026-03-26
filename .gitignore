@@ -45,6 +45,8 @@ xfer.bat
 xfer_n.bat
 build_utils.bat
 nialllt.c
+archive/
+archive.ps1
 
 # Depreciated code
 nival.c
